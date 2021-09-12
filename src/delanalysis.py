@@ -2,6 +2,7 @@ import re
 
 from pandas import read_csv, DataFrame, concat, merge
 from scipy.stats import zscore
+from typing import Optional
 
 
 class DelData:
@@ -22,7 +23,7 @@ class DelData:
         else:
             self.file_type = "merged"
 
-    def calculate_zscore(self, inplace=False):
+    def calculate_zscore(self, inplace=False) -> Optional[DelData]:
         if self.zscored:
             raise Exception("Data is already zscored")
         data_columns = [col for col in self.data if not re.search("^BB_\d+$", col)]
@@ -36,8 +37,38 @@ class DelData:
         if inplace:
             self.zscored = True
             self.data = zscore_df_final
+            return None
         else:
             return DelData(zscore_df_final, zscored=True)
+
+    def reduce(self, min_score: float, inplace=False) -> Optional[DelData]:
+        if self.file_type == "merge":
+            raise Exception(
+                "Can only reduce sample data.  Either call sample_data() or input sample data")
+        if self.zscored:
+            reduced_data = self.data[self.data.zscore >= min_score]
+        else:
+            reduced_data = self.data[self.data.Count >= min_score]
+        if inplace:
+            self.data = reduced_data
+            return None
+        else:
+            return DelData(reduced_data)
+
+    def sample_data(self, sample_name: str, inplace=False) -> Optional[DelData]:
+        if self.file_type == "sample":
+            raise Exception("Data is already sample data")
+        sample_data = self.data.iloc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
+        if self.zscored:
+            sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
+        else:
+            sample_data.rename({sample_name: "count"}, axis=1, inplace=True)
+        if inplace:
+            self.data = sample_data
+            self.file_type = "sample"
+            return None
+        else:
+            return DelData(sample_data, self.zscored)
 
     def quantile_normalize(self):
         if self.file_type == "sample":
@@ -55,14 +86,20 @@ class DelData:
         # TODO fill this in
         pass
 
-    def merge(self, deldata: DelData, inplace=False):
+    def merge(self, deldata: DelData, inplace=False) -> Optional[DelData]:
         merged_data = merge(self.data, deldata.data,
                             on=["BB_1", "BB_2", "BB_3"],
                             how="outer").fillna(0)
         if inplace:
             self.data = merged_data
+            return None
         else:
             return DelData(merged_data)
+
+
+def graph_3d(deldata: DelData, out_path: str, min_score: float):
+    reduced_data = deldata.reduce(min_score)
+    pass
 
 
 def read_merge(file_path: str) -> DelData:
