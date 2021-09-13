@@ -5,6 +5,7 @@ import re
 from datetime import date
 from io import StringIO
 from pandas import read_csv, DataFrame, concat, merge
+from plotly.subplots import make_subplots
 from scipy.stats import zscore
 from typing import Optional, Type
 
@@ -230,8 +231,28 @@ def graph_3d(deldata, out_dir="./", min_score=0):
             zaxis=dict(showticklabels=False, title_text="BB_3"),
         )
     )
-    file_name = f"{date.today()}_{deldata.sample_name}.html"
+    file_name = f"{date.today()}_{deldata.sample_name}.3d.html"
     fig.write_html(os.path.join(out_dir, file_name))
+
+
+def graph_2d(deldata, out_dir="./", min_score=0):
+    """
+    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+    y-axis the single building block.  Currently only works for 3 barcode data
+    """
+    if not type(deldata) == DelDataSample:
+        raise Exception(
+            "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
+    reduced_data = deldata.reduce(min_score)
+    max_score = reduced_data.max_score()
+    max_point_size = 12
+    sizes = reduced_data.data[reduced_data.data_column()].apply(
+        lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+    ab = reduced_data.data.index.apply(
+        lambda index: f"{reduced_data.data.BB_1[index]}-{reduced_data.BB_2[index]}")
+    bc = reduced_data.data.index.apply(
+        lambda index: f"{reduced_data.data.BB_2[index]}-{reduced_data.BB_3[index]}")
+    fig = make_subplots(rows=1, cols=2)
 
 
 def read_merged(file_path: str):
