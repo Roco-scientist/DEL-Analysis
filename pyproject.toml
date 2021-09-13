@@ -3,6 +3,6 @@ requires = [
     "setuptools>=42",
     "wheel",
     "pandas>=1",
-    ""
+    "plotly>=5"
 ]
 build-backend = "setuptools.build_meta"

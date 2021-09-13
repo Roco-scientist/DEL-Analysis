@@ -1,6 +1,7 @@
 import plotly.graph_objects as go
 import re
 
+from io import StringIO
 from pandas import read_csv, DataFrame, concat, merge
 from scipy.stats import zscore
 from typing import Optional, Type
@@ -11,20 +12,46 @@ class DelData:
     An object for working with data output from DEL-Decode
     """
 
-    def __init__(self, data, zscored=False):
+    def __init__(self, data, data_type="count"):
         self.data = data
-        self.zscored = zscored
+        self.data_type = data_type
 
     def __repr__(self):
-        # TODO fix below to prevent error
-        return print(self.data)
+        """
+        Return a string representation of the data.
+        """
+        buf = StringIO("")
+        self.data.to_string(
+            buf=buf,
+            max_rows=10,
+            min_rows=10,
+            max_cols=10,
+            line_width=None,
+            max_colwidth=None,
+            show_dimensions=True,
+        )
+
+        return buf.getvalue()
 
     def __str__(self):
-        # TODO fix below to prevent error
-        return print(self.data)
+        """
+        Return a string print of the data.
+        """
+        buf = StringIO("")
+        self.data.to_string(
+            buf=buf,
+            max_rows=10,
+            min_rows=10,
+            max_cols=10,
+            line_width=None,
+            max_colwidth=None,
+            show_dimensions=True,
+        )
+
+        return buf.getvalue()
 
     def calculate_zscore(self, inplace=False):
-        if self.zscored:
+        if self.data_type == "zscore":
             raise Exception("Data is already zscored")
         data_columns = [col for col in self.data if not re.search("^BB_\d+$", col)]
         building_block_columns = [col for col in self.data if re.search("^BB_\d+$", col)]
@@ -35,11 +62,11 @@ class DelData:
         zscore_df_final = concat([self.data.iloc[:, building_block_columns], zscore_df], sort=False, axis=1)\
             .rename({"Count": "zscore"}, axis=1)
         if inplace:
-            self.zscored = True
+            self.data_type = "zscore"
             self.data = zscore_df_final
             return None
         else:
-            return DelData(zscore_df_final, zscored=True)
+            return DelData(zscore_df_final, data_type="zscore")
 
 
 class DelDataMerged(DelData):
@@ -69,10 +96,9 @@ class DelDataMerged(DelData):
         pass
 
     def merge(self, deldata, inplace=False):
-        if self.zscored and not deldata.zscored:
-            raise Exception("Self is z-scored while merging data is not z-scored")
-        if not self.zscored and deldata.zscored:
-            raise Exception("Self is not z-scored while merging data is z-scored")
+        if self.data_type != deldata.data_type:
+            raise Exception(
+                f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         merged_data = merge(self.data, deldata.data,
                             on=["BB_1", "BB_2", "BB_3"],
                             how="outer").fillna(0)
@@ -80,18 +106,24 @@ class DelDataMerged(DelData):
             self.data = merged_data
             return None
         else:
-            return DelDataMerged(merged_data, self.zscored)
+            return DelDataMerged(merged_data, self.data_type)
 
     def sample_data(self, sample_name: str):
         """
         Outputs a DelDataSample object from the DelDataMerged object
         """
         sample_data = self.data.iloc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
-        if self.zscored:
+        if self.data_type == "zscore":
             sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
         else:
-            sample_data.rename({sample_name: "count"}, axis=1, inplace=True)
-        return DelDataSample(sample_data, sample_name, self.zscored)
+            sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
+        return DelDataSample(sample_data, sample_name, self.data_type)
+
+    def data_columns(self):
+        """
+        Returns all data column names
+        """
+        return [col for col in self.data.columns if col not in ("BB_1", "BB_2", "BB_3")]
 
 
 class DelDataSample(DelData):
@@ -99,55 +131,45 @@ class DelDataSample(DelData):
     An object for working with sample output from DEL-Decode
     """
 
-    def __init__(self, data, sample_name: str, zscored=False):
-        super().__init__(data, zscored)
+    def __init__(self, data, sample_name: str, data_type="Count"):
+        super().__init__(data, data_type)
         self.sample_name = sample_name
 
     def merge(self, deldata):
         """
         Merges two DelDataSample objects and outputs a DelDataMerged object
         """
-        if self.zscored and not deldata.zscored:
-            raise Exception("Self is z-scored while merging data is not z-scored")
-        if not self.zscored and deldata.zscored:
-            raise Exception("Self is not z-scored while merging data is z-scored")
-        merged_data = merge(self.data, deldata.data,
+        if self.data_type != deldata.data_type:
+            raise Exception(
+                f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
+        merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1), deldata.data,
                             on=["BB_1", "BB_2", "BB_3"],
                             how="outer").fillna(0)
-        return DelDataMerged(merged_data, self.zscored)
+        return DelDataMerged(merged_data, self.data_type)
 
     def reduce(self, min_score: float, inplace=False):
         """
         Reduces the data to only include data which is higher than the min_score.  Will do so in
         place or return a new DelDataSample
         """
-        if self.zscored:
-            reduced_data = self.data[self.data.zscore >= min_score]
-        else:
-            reduced_data = self.data[self.data.Count >= min_score]
+        reduced_data = self.data[self.data[self.data_type] >= min_score]
         if inplace:
             self.data = reduced_data
             return None
         else:
-            return DelDataSample(reduced_data, self.sample_name, self.zscored)
+            return DelDataSample(reduced_data, self.sample_name, self.data_type)
 
     def max_score(self) -> float:
         """
         Returns the maximum score, whether that is a zscore or a count
         """
-        if self.zscored:
-            return max(self.data.zscore)
-        else:
-            return max(self.data.Count)
+        return max(self.data[self.data_type])
 
     def data_column(self) -> str:
         """
         Returns the name of the data column from the DelDataSample object
         """
-        if self.zscored:
-            return "zscore"
-        else:
-            return "Count"
+        return self.data_type
 
 
 def graph_3d(deldata, out_prefix: str, min_score: float):
