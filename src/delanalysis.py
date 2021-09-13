@@ -248,11 +248,53 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    ab = reduced_data.data.index.apply(
-        lambda index: f"{reduced_data.data.BB_1[index]}-{reduced_data.BB_2[index]}")
-    bc = reduced_data.data.index.apply(
-        lambda index: f"{reduced_data.data.BB_2[index]}-{reduced_data.BB_3[index]}")
+    ab = [f"{a},{b}" for a, b in zip(reduced_data.data.BB_1, reduced_data.data.BB_2)]
+    bc = [f"{b},{c}" for b, c in zip(reduced_data.data.BB_2, reduced_data.data.BB_3)]
     fig = make_subplots(rows=1, cols=2)
+    fig.append_trace(go.Scatter(
+        x=ab,
+        y=reduced_data.BB_3,
+        mode='markers',
+        hovertemplate="<b>BB_1, BB_2<b>: %{x}<br><b>BB_3<b>: %{y}<br>%{text}",
+        marker=dict(
+            size=sizes,
+            color=sizes,
+            colorscale='YlOrRd',
+            showscale=True,
+            cmax=max(sizes),
+            cmin=min([0, min(sizes)])
+        ),
+        text=[f"{reduced_data.data_column()}: {score}" for score in
+              reduced_data.data[reduced_data.data_column()]]
+
+    ), row=1, col=1)
+    fig["layout"]["xaxis"]["title"] = "BB_1 and BB_2"
+    fig["layout"]["xaxis"]["showticklabels"] = False
+    fig["layout"]["yaxis"]["title"] = "BB_3"
+    fig["layout"]["yaxis"]["showticklabels"] = False
+    fig.append_trace(go.Scatter(
+        x=bc,
+        y=reduced_data.BB_1,
+        mode='markers',
+        hovertemplate="<b>BB_2, BB_3<b>: %{x}<br><b>BB_1<b>: %{y}<br>%{text}",
+        marker=dict(
+            size=sizes,
+            color=sizes,
+            colorscale='YlOrRd',
+            showscale=True,
+            cmax=max(sizes),
+            cmin=min([0, min(sizes)])
+        ),
+        text=[f"{reduced_data.data_column()}: {score}" for score in
+              reduced_data.data[reduced_data.data_column()]]
+
+    ), row=1, col=2)
+    fig["layout"]["xaxis2"]["title"] = "BB_1 and BB_2"
+    fig["layout"]["xaxis2"]["showticklabels"] = False
+    fig["layout"]["yaxis2"]["title"] = "BB_3"
+    fig["layout"]["yaxis2"]["showticklabels"] = False
+    file_name = f"{date.today()}_{deldata.sample_name}.2d.html"
+    fig.write_html(os.path.join(out_dir, file_name))
 
 
 def read_merged(file_path: str):
