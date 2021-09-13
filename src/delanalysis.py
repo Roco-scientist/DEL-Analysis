@@ -1,6 +1,8 @@
+import os
 import plotly.graph_objects as go
 import re
 
+from datetime import date
 from io import StringIO
 from pandas import read_csv, DataFrame, concat, merge
 from scipy.stats import zscore
@@ -12,9 +14,10 @@ class DelData:
     An object for working with data output from DEL-Decode
     """
 
-    def __init__(self, data, data_type="count"):
+    def __init__(self, data, data_type="Count", sample_name=None):
         self.data = data
         self.data_type = data_type
+        self.sample_name = sample_name
 
     def __repr__(self):
         """
@@ -50,23 +53,31 @@ class DelData:
 
         return buf.getvalue()
 
-    def calculate_zscore(self, inplace=False):
+    def _zscore(self):
         if self.data_type == "zscore":
             raise Exception("Data is already zscored")
-        data_columns = [col for col in self.data if not re.search("^BB_\d+$", col)]
-        building_block_columns = [col for col in self.data if re.search("^BB_\d+$", col)]
         # Get the zscore of the count columns
-        zscore_values = zscore(self.data.loc[:, data_columns].values)
+        zscore_values = zscore(self.data.loc[:, self.data_columns()].values)
         # Create a dataframe to add the blocks back
-        zscore_df = DataFrame(data=zscore_values, columns=data_columns)
-        zscore_df_final = concat([self.data.iloc[:, building_block_columns], zscore_df], sort=False, axis=1)\
-            .rename({"Count": "zscore"}, axis=1)
-        if inplace:
-            self.data_type = "zscore"
-            self.data = zscore_df_final
-            return None
-        else:
-            return DelData(zscore_df_final, data_type="zscore")
+        zscore_df = DataFrame(data=zscore_values, columns=self.data_columns())
+        zscore_df_final = concat([self.data.loc[:, self.building_block_columns()], zscore_df],
+                                 ignore_index=True, sort=False, axis=1)
+        columns = self.building_block_columns() + self.data_columns()
+        zscore_df_final.columns = columns
+        zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
+        return zscore_df_final
+
+    def data_columns(self):
+        """
+        Returns all column names that contain data that is not the barcodes
+        """
+        return [col for col in self.data.columns if not re.search("^BB_\d+$", col)]
+
+    def building_block_columns(self):
+        """
+        Returns all building block barcode column names
+        """
+        return [col for col in self.data if re.search("^BB_\d+$", col)]
 
 
 class DelDataMerged(DelData):
@@ -117,23 +128,22 @@ class DelDataMerged(DelData):
             sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
         else:
             sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
-        return DelDataSample(sample_data, sample_name, self.data_type)
+        return DelDataSample(sample_data, self.data_type, sample_name)
 
-    def data_columns(self):
-        """
-        Returns all data column names
-        """
-        return [col for col in self.data.columns if col not in ("BB_1", "BB_2", "BB_3")]
+    def zscore(self, inplace=False):
+        zscore_df = self._zscore()
+        if inplace:
+            self.data_type = "zscore"
+            self.data = zscore_df
+            return None
+        else:
+            return DelDataMerged(zscore_df, data_type="zscore")
 
 
 class DelDataSample(DelData):
     """
     An object for working with sample output from DEL-Decode
     """
-
-    def __init__(self, data, sample_name: str, data_type="Count"):
-        super().__init__(data, data_type)
-        self.sample_name = sample_name
 
     def merge(self, deldata):
         """
@@ -157,7 +167,7 @@ class DelDataSample(DelData):
             self.data = reduced_data
             return None
         else:
-            return DelDataSample(reduced_data, self.sample_name, self.data_type)
+            return DelDataSample(reduced_data, self.data_type, self.sample_name)
 
     def max_score(self) -> float:
         """
@@ -171,8 +181,17 @@ class DelDataSample(DelData):
         """
         return self.data_type
 
+    def zscore(self, inplace=False):
+        zscore_df = self._zscore()
+        if inplace:
+            self.data_type = "zscore"
+            self.data = zscore_df
+            return None
+        else:
+            return DelDataSample(zscore_df, "zscore", self.sample_name)
 
-def graph_3d(deldata, out_prefix: str, min_score: float):
+
+def graph_3d(deldata, out_dir="./", min_score=0):
     """
     Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
     only works for 3 barcode data
@@ -211,7 +230,8 @@ def graph_3d(deldata, out_prefix: str, min_score: float):
             zaxis=dict(showticklabels=False, title_text="BB_3"),
         )
     )
-    fig.write_html(f"{out_prefix}.html")
+    file_name = f"{date.today()}_{deldata.sample_name}.html"
+    fig.write_html(os.path.join(out_dir, file_name))
 
 
 def read_merged(file_path: str):
@@ -232,12 +252,13 @@ def read_sample(file_path: str, sample_name: str):
     if "Count" not in data.columns:
         raise Exception(
             "Data type is not sample. Maybe use delanalysis.read_merge() if it is the merged output data")
-    return DelDataSample(data, sample_name)
+    return DelDataSample(data, sample_name=sample_name)
 
 
 def main():
     "Setup for testing"
     data = read_sample("../../test_del/test_counts.csv", "test")
+    graph_3d(data.zscore(), "../../", 4)
     breakpoint()
     pass
 
