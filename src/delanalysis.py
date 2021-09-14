@@ -7,7 +7,7 @@ from io import StringIO
 from pandas import read_csv, DataFrame, concat, merge
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
-from typing import Optional, Type
+from typing import Optional, Type, List
 
 
 class DelData:
@@ -86,6 +86,12 @@ class DelData:
         """
         self.data.to_csv(out_file, index=False)
 
+    def data_descriptor(self):
+        """
+        Returns teh data type without spaces for output files
+        """
+        return self.data_type.replace(" ", "_")
+
 
 class DelDataMerged(DelData):
     """
@@ -98,6 +104,8 @@ class DelDataMerged(DelData):
         """
         if self.data_type != "zscore":
             print("The data should probably be z-scored first")
+        if "quantile_normalize" in self.data_type:
+            raise Exception("Data is already quantile normalized")
         rank_mean = self.data.loc[:, self.data_columns()].stack().groupby(
             self.data.loc[:, self.data_columns()].rank(method='first').stack().astype(int)).mean()
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
@@ -108,26 +116,26 @@ class DelDataMerged(DelData):
         quantile_norm_df.columns = self.building_block_columns() + self.data_columns()
         if inplace:
             self.data = quantile_norm_df
-            self.data_type = "quanntile_normalized"
+            self.data_type = f"quantile normalized {self.data_type}"
             return None
         else:
-            return DelDataMerged(quantile_norm_df, "quanntile_normalized")
+            return DelDataMerged(quantile_norm_df, "quantile normalized")
 
-    def subtract_within(self, sample_1: str, sample_2: str):
+    def __subtract_within(self, sample_1: str, sample_2: str):
         """
         WORK IN PROGRESS
         """
         # TODO fill this in
         pass
 
-    def subtract_sample(self, sample_1: str, sample_2: str):
+    def __subtract_sample(self, sample_1: str, sample_2: str):
         """
         WORK IN PROGRESS
         """
         # TODO fill this in
         pass
 
-    def background_subtract(self, background_name: str, inplace=False):
+    def subtract_background(self, background_name: str, inplace=False):
         """
         Subtracts background
         """
@@ -140,9 +148,10 @@ class DelDataMerged(DelData):
         del_data_back_sub_df.columns = self.building_block_columns() + del_data_back_sub.columns.tolist()
         if inplace:
             self.data = del_data_back_sub_df
+            self.data_type = f"{self.data_type} background subtracted"
             return None
         else:
-            return DelDataMerged(del_data_back_sub_df, self.data_type)
+            return DelDataMerged(del_data_back_sub_df, f"{self.data_type} background subtracted")
 
     def reduce(self, min_score: float, inplace=False):
         """
@@ -179,6 +188,19 @@ class DelDataMerged(DelData):
         else:
             sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
         return DelDataSample(sample_data, self.data_type, sample_name)
+
+    def select_samples(self, sample_names: List[str], inplace=False):
+        """
+        Returns a subset of samples from a DelDataMerged object
+        """
+        if not isinstance(sample_names, list):
+            raise Exception("sample_names needs to be a list of sample names")
+        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3"] + sample_names]
+        if inplace:
+            self.data = sample_data
+            return None
+        else:
+            return DelDataMerged(sample_data, self.data_type)
 
     def zscore(self, inplace=False):
         zscore_df = self._zscore()
@@ -280,7 +302,7 @@ def graph_3d(deldata, out_dir="./", min_score=0):
             zaxis=dict(showticklabels=False, title_text="BB_3"),
         )
     )
-    file_name = f"{date.today()}_{deldata.sample_name}.3d.html"
+    file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -342,22 +364,21 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig["layout"]["xaxis2"]["showticklabels"] = False
     fig["layout"]["yaxis2"]["title"] = "BB_3"
     fig["layout"]["yaxis2"]["showticklabels"] = False
-    file_name = f"{date.today()}_{deldata.sample_name}.2d.html"
+    file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
 def compirison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
     if not type(deldatamerged) == DelDataMerged:
         raise Exception("Comparison graph only works for merged data")
-    # TODO fix below so only the two columns are considered
-    reduced_data = deldatamerged.reduce(min_score)
+    reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
     max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
     fig = go.Figure(data=go.Scatter(
         x=reduced_data.data[x_sample],
         y=reduced_data.data[y_sample],
         mode='markers',
         hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
-        text=[f"BB_1: {bb_1}, BB_2: {bb_2}, BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
+        text=[f"BB_1: {bb_1}<br>BB_2: {bb_2}<br>BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
               zip(reduced_data.data.BB_1, reduced_data.data.BB_2, reduced_data.data.BB_3)]
     ))
     fig.add_shape(type='line',
@@ -367,9 +388,9 @@ def compirison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
                   y1=max_value,
                   line=dict(color='Red'))
     fig.update_layout(
-        xaxis_title=x_sample,
-        yaxis_title=y_sample)
-    file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.2d.html"
+        xaxis_title=f"{x_sample} {reduced_data.data_type}",
+        yaxis_title=f"{y_sample} {reduced_data.data_type}")
+    file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{deldatamerged.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -398,13 +419,9 @@ def main():
     "Setup for testing"
     data = read_sample("../../test_del/test_counts.csv", "test")
     data_merge = read_merged("../../test_del/test_counts.all.csv")
-    print("zscoring")
-    data_merge.zscore(inplace=True)
-    print("Quantile normalizing")
-    data_merge.quantile_normalize(inplace=True)
-    breakpoint()
-    compirison_graph(data_merge, "test_2", "test_3", "../../test_del/", 4)
-    pass
+    print("Transforming data")
+    data_transformed = data_merge.zscore().quantile_normalize().subtract_background("test_1")
+    compirison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
 
 
 if __name__ == "__main__":
