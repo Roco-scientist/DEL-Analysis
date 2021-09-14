@@ -96,14 +96,15 @@ class DelDataMerged(DelData):
         """
         Qauntile normalizes the data.  Best if used after z-scoring the data
         """
-        if self.data_type != "zscored":
+        if self.data_type != "zscore":
             print("The data should probably be z-scored first")
         rank_mean = self.data.loc[:, self.data_columns()].stack().groupby(
             self.data.loc[:, self.data_columns()].rank(method='first').stack().astype(int)).mean()
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
             method='min').stack().astype(int).map(rank_mean).unstack()
-        qauntile_norm_df = concat(
-            [self.data.iloc[:, self.building_block_columns()], quantile_norm], ignore_index=True, sort=False)
+        quantile_norm_df = concat(
+            [self.data.loc[:, self.building_block_columns()], quantile_norm], ignore_index=True,
+            sort=False, axis=1)
         quantile_norm_df.columns = self.building_block_columns() + self.data_columns()
         if inplace:
             self.data = quantile_norm_df
@@ -127,16 +128,21 @@ class DelDataMerged(DelData):
         pass
 
     def background_subtract(self, background_name: str, inplace=False):
-        del_data = self.data.loc[:, self.data_columns].drop(columns=[background_name])
+        """
+        Subtracts background
+        """
+        del_data = self.data.loc[:, self.data_columns()].drop(columns=[background_name])
         background_data = self.data[background_name]
-        del_data_back_sub = concat([self.data.iloc[:, self.building_block_columns()], del_data.sub(
-            background_data)], ignore_index=True, sort=False)
-        del_data_back_sub.columns = self.building_block_columns() + background_data.columns
+        del_data_back_sub = del_data.sub(
+            background_data, axis=0)
+        del_data_back_sub_df = concat([self.data.loc[:, self.building_block_columns()],
+                                       del_data_back_sub], ignore_index=True, sort=False, axis=1)
+        del_data_back_sub_df.columns = self.building_block_columns() + del_data_back_sub.columns.tolist()
         if inplace:
-            self.data = del_data_back_sub
+            self.data = del_data_back_sub_df
             return None
         else:
-            return DelDataMerged(del_data_back_sub, self.data_type)
+            return DelDataMerged(del_data_back_sub_df, self.data_type)
 
     def reduce(self, min_score: float, inplace=False):
         """
@@ -167,7 +173,7 @@ class DelDataMerged(DelData):
         """
         Outputs a DelDataSample object from the DelDataMerged object
         """
-        sample_data = self.data.iloc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
+        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
         if self.data_type == "zscore":
             sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
         else:
@@ -340,17 +346,26 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig.write_html(os.path.join(out_dir, file_name))
 
 
-def compirson_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
+def compirison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
     if not type(deldatamerged) == DelDataMerged:
         raise Exception("Comparison graph only works for merged data")
+    # TODO fix below so only the two columns are considered
     reduced_data = deldatamerged.reduce(min_score)
+    max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
     fig = go.Figure(data=go.Scatter(
         x=reduced_data.data[x_sample],
         y=reduced_data.data[y_sample],
-        hovertemplate="<b>%{x_sample}<b>: %{x}<br><b>%{y_sample}<b>: %{y}<br>%{text}",
+        mode='markers',
+        hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
         text=[f"BB_1: {bb_1}, BB_2: {bb_2}, BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
               zip(reduced_data.data.BB_1, reduced_data.data.BB_2, reduced_data.data.BB_3)]
     ))
+    fig.add_shape(type='line',
+                  x0=0,
+                  y0=0,
+                  x1=max_value,
+                  y1=max_value,
+                  line=dict(color='Red'))
     fig.update_layout(
         xaxis_title=x_sample,
         yaxis_title=y_sample)
@@ -382,8 +397,13 @@ def read_sample(file_path: str, sample_name: str):
 def main():
     "Setup for testing"
     data = read_sample("../../test_del/test_counts.csv", "test")
-    graph_3d(data.zscore(), "../../", 4)
+    data_merge = read_merged("../../test_del/test_counts.all.csv")
+    print("zscoring")
+    data_merge.zscore(inplace=True)
+    print("Quantile normalizing")
+    data_merge.quantile_normalize(inplace=True)
     breakpoint()
+    compirison_graph(data_merge, "test_2", "test_3", "../../test_del/", 4)
     pass
 
 
