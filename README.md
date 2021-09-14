@@ -59,7 +59,7 @@ merged_data = delanalysis.read_merged("test_counts.all.csv")
 merged_data_transformed = merged_data.zscore().quantile_normalize().subtract_background("test_1")
 
 # Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
-comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
+delanalysis.comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
 ```
 
 ### Working with sample data output
@@ -74,9 +74,9 @@ sample_data = delanalysis.read_sample("test_1.csv")
 sample_data_zscore = sample_data.zscore()
 
 # Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
-graph_3d(sample_data_zscore, "./", 4)
+delanalysis.graph_3d(sample_data_zscore, "./", 4)
 
 # Create a 2d graph within the current directory and a low end cutoff of 4
-graph_2d(sample_data_zscore, "./", 4)
+delanalysis.graph_2d(sample_data_zscore, "./", 4)
 ```
 
