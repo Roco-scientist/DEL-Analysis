@@ -11,6 +11,8 @@ DNA encoded library analysis.  This is companion software to DEL-Decode for outp
 
 ## Installation
 
+### STILL A WORK IN PROGRESS FOR INSTALLING
+
 Download and move into directory
 
 ```
