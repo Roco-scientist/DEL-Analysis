@@ -368,7 +368,7 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig.write_html(os.path.join(out_dir, file_name))
 
 
-def compirison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
+def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
     if not type(deldatamerged) == DelDataMerged:
         raise Exception("Comparison graph only works for merged data")
     reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
