@@ -80,18 +80,37 @@ class DelData:
         """
         return [col for col in self.data if re.search("^BB_\d+$", col)]
 
+    def to_csv(self, out_file: str):
+        """
+        Writes the current data to a csv file
+        """
+        self.data.to_csv(out_file, index=False)
+
 
 class DelDataMerged(DelData):
     """
     An object for working with merged data output from DEL-Decode
     """
 
-    def quantile_normalize(self):
+    def quantile_normalize(self, inplace=False):
         """
-        WORK IN PROGRESS
+        Qauntile normalizes the data.  Best if used after z-scoring the data
         """
-        # TODO finish this
-        pass
+        if self.data_type != "zscored":
+            print("The data should probably be z-scored first")
+        rank_mean = self.data.loc[:, self.data_columns()].stack().groupby(
+            self.data.loc[:, self.data_columns()].rank(method='first').stack().astype(int)).mean()
+        quantile_norm = self.data.loc[:, self.data_columns()].rank(
+            method='min').stack().astype(int).map(rank_mean).unstack()
+        qauntile_norm_df = concat(
+            [self.data.iloc[:, self.building_block_columns()], quantile_norm], ignore_index=True, sort=False)
+        quantile_norm_df.columns = self.building_block_columns() + self.data_columns()
+        if inplace:
+            self.data = quantile_norm_df
+            self.data_type = "quanntile_normalized"
+            return None
+        else:
+            return DelDataMerged(quantile_norm_df, "quanntile_normalized")
 
     def subtract_within(self, sample_1: str, sample_2: str):
         """
@@ -321,13 +340,20 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig.write_html(os.path.join(out_dir, file_name))
 
 
-def compirson_graph(deldatamerged, x_sample: str, y_sample: str):
+def compirson_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
     if not type(deldatamerged) == DelDataMerged:
         raise Exception("Comparison graph only works for merged data")
+    reduced_data = deldatamerged.reduce(min_score)
     fig = go.Figure(data=go.Scatter(
-        x=deldatamerged.data[x_sample],
-        y=deldatamerged.data[y_sample],
+        x=reduced_data.data[x_sample],
+        y=reduced_data.data[y_sample],
+        hovertemplate="<b>%{x_sample}<b>: %{x}<br><b>%{y_sample}<b>: %{y}<br>%{text}",
+        text=[f"BB_1: {bb_1}, BB_2: {bb_2}, BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
+              zip(reduced_data.data.BB_1, reduced_data.data.BB_2, reduced_data.data.BB_3)]
     ))
+    fig.update_layout(
+        xaxis_title=x_sample,
+        yaxis_title=y_sample)
     file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
