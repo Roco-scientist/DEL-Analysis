@@ -74,7 +74,6 @@ Work in progress
 </table>
 
 ## Run
-All code below is within python<br><br>
 
 ### Start
 
@@ -84,6 +83,8 @@ python
 ```
 
 ### Working with merged data output
+
+All code below is within python<br><br>
 
 ```
 import delanalysis
@@ -108,6 +109,8 @@ delanalysis.graph_2d(test_2_data_transformed, "./", 4)
 ```
 
 ### Working with sample data output
+
+All code below is within python<br><br>
 
 ```
 import delanalysis
