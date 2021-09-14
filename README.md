@@ -10,7 +10,34 @@ DNA encoded library analysis.  This is companion software to DEL-Decode for outp
 </ul>
 
 ## Installation
-Work in progress
+
+Download and move into directory
+
+```
+git clone https://github.com/Roco-scientist/DEL-Analysis.git
+cd DEL-Analysis
+```
+
+Create a del environment
+
+```
+conda create -n del python=3
+conda activate del
+pip install -r requirements.txt
+```
+
+Build DEL-Analysis
+
+```
+python3 -m pip install --upgrade build
+python3 -m build
+```
+
+Install DEL-Analysis
+
+```
+pip install ./dist/DEL_Analysis-0.0.1-py3-none-any.whl
+```
 
 ## Files Needed
 Output files from DEL-Decode
