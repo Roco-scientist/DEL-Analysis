@@ -60,6 +60,15 @@ merged_data_transformed = merged_data.zscore().quantile_normalize().subtract_bac
 
 # Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
 delanalysis.comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
+
+# Creates a DelDataSample object from a single sample from the merged object
+test_2_data_transformed = merged_data_transformed.sample_data("test_2")
+
+# Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
+delanalysis.graph_3d(test_2_data_transformed, "./", 4)
+
+# Create a 2d graph within the current directory and a low end cutoff of 4
+delanalysis.graph_2d(test_2_data_transformed, "./", 4)
 ```
 
 ### Working with sample data output
