@@ -107,6 +107,30 @@ class DelDataMerged(DelData):
         # TODO fill this in
         pass
 
+    def background_subtract(self, background_name: str, inplace=False):
+        del_data = self.data.loc[:, self.data_columns].drop(columns=[background_name])
+        background_data = self.data[background_name]
+        del_data_back_sub = concat([self.data.iloc[:, self.building_block_columns()], del_data.sub(
+            background_data)], ignore_index=True, sort=False)
+        del_data_back_sub.columns = self.building_block_columns() + background_data.columns
+        if inplace:
+            self.data = del_data_back_sub
+            return None
+        else:
+            return DelDataMerged(del_data_back_sub, self.data_type)
+
+    def reduce(self, min_score: float, inplace=False):
+        """
+        Reduces the data to only include with at least on sample higher than min_score.  Will do so in
+        place or return a new DelDataSample
+        """
+        reduced_data = self.data[(self.data[self.data_columns()] >= min_score).any(1)]
+        if inplace:
+            self.data = reduced_data
+            return None
+        else:
+            return DelDataMerged(reduced_data, self.data_type)
+
     def merge(self, deldata, inplace=False):
         if self.data_type != deldata.data_type:
             raise Exception(
@@ -294,6 +318,17 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig["layout"]["yaxis2"]["title"] = "BB_3"
     fig["layout"]["yaxis2"]["showticklabels"] = False
     file_name = f"{date.today()}_{deldata.sample_name}.2d.html"
+    fig.write_html(os.path.join(out_dir, file_name))
+
+
+def compirson_graph(deldatamerged, x_sample: str, y_sample: str):
+    if not type(deldatamerged) == DelDataMerged:
+        raise Exception("Comparison graph only works for merged data")
+    fig = go.Figure(data=go.Scatter(
+        x=deldatamerged.data[x_sample],
+        y=deldatamerged.data[y_sample],
+    ))
+    file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
