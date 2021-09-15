@@ -418,13 +418,20 @@ def read_sample(file_path: str, sample_name: str):
     return DelDataSample(data, sample_name=sample_name)
 
 
-def main():
+def _test():
     "Setup for testing"
     data = read_sample("../../test_del/test_counts.csv", "test")
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
     data_transformed = data_merge.zscore().quantile_normalize().subtract_background("test_1")
-    compirison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
+    comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
+    sample_2 = data_transformed.sample_data("test_2")
+    graph_2d(sample_2, "../../test_del/", 4)
+    graph_3d(sample_2, "../../test_del/", 4)
+
+
+def main():
+    _test()
 
 
 if __name__ == "__main__":
