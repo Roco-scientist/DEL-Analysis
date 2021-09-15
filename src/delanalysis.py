@@ -265,6 +265,23 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(zscore_df, "zscore", self.sample_name)
 
+    def enrichment(self, library_diversity: int, inplace=False):
+        """
+        From https://doi.org/10.1177%2F2472555218757718
+        """
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
+        total_count = sum(self.data.Count)
+        enrichment_score = self.data.Count * library_diversity / total_count
+        enrichment_df = self.data.renamce({"Count": "enrichment"}, axis=1)
+        enrichment_df["enrichment"] = enrichment_score
+        if inplace:
+            self.data_type = "enrichment"
+            self.data = enrichment_df
+            return None
+        else:
+            return DelDataSample(enrichment_df, "enrichment", self.sample_name)
+
 
 def graph_3d(deldata, out_dir="./", min_score=0):
     """
