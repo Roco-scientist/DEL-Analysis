@@ -195,6 +195,8 @@ delanalysis.graph_2d(sample_data_zscore, "./", 4)
 
 ### Resulting graphs
 
+The actual graphs will be interactive HTML graphs with hover data etc. <br><br>
+
 From delanalysis.comparison_graph()<br>
 
 ![ "delanalysis.comparison_graph()" ](./comparison_graph.png)<br>
