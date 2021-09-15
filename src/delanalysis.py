@@ -119,7 +119,7 @@ class DelDataMerged(DelData):
             self.data_type = f"quantile normalized {self.data_type}"
             return None
         else:
-            return DelDataMerged(quantile_norm_df, "quantile normalized")
+            return DelDataMerged(quantile_norm_df, f"quantile normalized {self.data_type}")
 
     def __subtract_within(self, sample_1: str, sample_2: str):
         """
@@ -166,6 +166,8 @@ class DelDataMerged(DelData):
             return DelDataMerged(reduced_data, self.data_type)
 
     def merge(self, deldata, inplace=False):
+        if type(deldata) == DelDataSample:
+            raise Exception("Only merged data is supported at this time")
         if self.data_type != deldata.data_type:
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
@@ -220,6 +222,7 @@ class DelDataSample(DelData):
     def merge(self, deldata):
         """
         Merges two DelDataSample objects and outputs a DelDataMerged object
+        Still a work in progress
         """
         if self.data_type != deldata.data_type:
             raise Exception(
@@ -291,7 +294,7 @@ def graph_3d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {score}" for score in
+        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
               reduced_data.data[reduced_data.data_column()]]
     )])
     # Remove tick labels
@@ -324,7 +327,7 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig = make_subplots(rows=1, cols=2)
     fig.append_trace(go.Scatter(
         x=ab,
-        y=reduced_data.BB_3,
+        y=reduced_data.data.BB_3,
         mode='markers',
         hovertemplate="<b>BB_1, BB_2<b>: %{x}<br><b>BB_3<b>: %{y}<br>%{text}",
         marker=dict(
@@ -335,7 +338,7 @@ def graph_2d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {score}" for score in
+        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
               reduced_data.data[reduced_data.data_column()]]
 
     ), row=1, col=1)
@@ -345,7 +348,7 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig["layout"]["yaxis"]["showticklabels"] = False
     fig.append_trace(go.Scatter(
         x=bc,
-        y=reduced_data.BB_1,
+        y=reduced_data.data.BB_1,
         mode='markers',
         hovertemplate="<b>BB_2, BB_3<b>: %{x}<br><b>BB_1<b>: %{y}<br>%{text}",
         marker=dict(
@@ -356,13 +359,13 @@ def graph_2d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {score}" for score in
+        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
               reduced_data.data[reduced_data.data_column()]]
 
     ), row=1, col=2)
-    fig["layout"]["xaxis2"]["title"] = "BB_1 and BB_2"
+    fig["layout"]["xaxis2"]["title"] = "BB_2 and BB_3"
     fig["layout"]["xaxis2"]["showticklabels"] = False
-    fig["layout"]["yaxis2"]["title"] = "BB_3"
+    fig["layout"]["yaxis2"]["title"] = "BB_1"
     fig["layout"]["yaxis2"]["showticklabels"] = False
     file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
@@ -374,8 +377,8 @@ def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
     reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
     max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
     fig = go.Figure(data=go.Scatter(
-        x=reduced_data.data[x_sample],
-        y=reduced_data.data[y_sample],
+        x=reduced_data.data[x_sample].round(3),
+        y=reduced_data.data[y_sample].round(3),
         mode='markers',
         hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
         text=[f"BB_1: {bb_1}<br>BB_2: {bb_2}<br>BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
