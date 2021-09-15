@@ -5,8 +5,8 @@ DNA encoded library analysis.  This is companion software to DEL-Decode for outp
 <ul>
 <li><a href=#installation>Installation</a></li>
 <li><a href=#files-needed>Files Needed</a></li>
-<li><a href=#methods>Methods</a></li>
 <li><a href=#run>Run</a></li>
+<li><a href=#methods>Methods</a></li>
 </ul>
 
 ## Installation
@@ -43,6 +43,77 @@ pip install ./dist/delanalysis-0.0.1-py3-none-any.whl
 
 ## Files Needed
 Output files from DEL-Decode
+
+## Run
+
+### Start
+
+```
+conda activate del
+python
+```
+
+### Working with merged data output
+
+All code below is within python<br><br>
+
+```
+import delanalysis
+
+# Import merged data output from DEL-Decode.  This creates a DelDataMerged object
+merged_data = delanalysis.read_merged("test_counts.all.csv")
+
+# zscore, then quantile_normalize, then subtract background which is 'test_1'
+merged_data_transformed = merged_data.zscore().quantile_normalize().subtract_background("test_1")
+
+# Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
+delanalysis.comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
+
+# Creates a DelDataSample object from a single sample from the merged object
+test_2_data_transformed = merged_data_transformed.sample_data("test_2")
+
+# Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
+delanalysis.graph_3d(test_2_data_transformed, "./", 4)
+
+# Create a 2d graph within the current directory and a low end cutoff of 4
+delanalysis.graph_2d(test_2_data_transformed, "./", 4)
+```
+
+### Working with sample data output
+
+All code below is within python<br><br>
+
+```
+import delanalysis
+
+# Import sample data output from DEL-Decode.  This creates a DelDataSample object
+sample_data = delanalysis.read_sample("test_1.csv")
+
+# zscore
+sample_data_zscore = sample_data.zscore()
+
+# Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
+delanalysis.graph_3d(sample_data_zscore, "./", 4)
+
+# Create a 2d graph within the current directory and a low end cutoff of 4
+delanalysis.graph_2d(sample_data_zscore, "./", 4)
+```
+
+### Resulting graphs
+
+The actual graphs will be interactive HTML graphs with hover data etc. <br><br>
+
+From delanalysis.comparison_graph()<br>
+
+![ "delanalysis.comparison_graph()" ](./comparison_graph.png)<br>
+
+From delanalysis.graph_2d()<br>
+
+![ "delanalysis.graph_2d()" ](./2d_graph.png)<br>
+
+From delanalysis.graph_3d()<br>
+
+![ "delanalysis.graph_3d()" ](./3d_graph.png)<br>
 
 ## Methods
 
@@ -137,74 +208,3 @@ Used with delanalysis.read_sample() which creates a DelDataSample object
 <td>delanalysis.graph_3d(DelDataSample, out_dir, min_score=0)</td> <td>Produces 3d graphs for the different barcodes of a DelDataSample. Will not work with DelDataMerged objects</td>
 </tr>
 </table>
-
-## Run
-
-### Start
-
-```
-conda activate del
-python
-```
-
-### Working with merged data output
-
-All code below is within python<br><br>
-
-```
-import delanalysis
-
-# Import merged data output from DEL-Decode.  This creates a DelDataMerged object
-merged_data = delanalysis.read_merged("test_counts.all.csv")
-
-# zscore, then quantile_normalize, then subtract background which is 'test_1'
-merged_data_transformed = merged_data.zscore().quantile_normalize().subtract_background("test_1")
-
-# Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
-delanalysis.comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
-
-# Creates a DelDataSample object from a single sample from the merged object
-test_2_data_transformed = merged_data_transformed.sample_data("test_2")
-
-# Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
-delanalysis.graph_3d(test_2_data_transformed, "./", 4)
-
-# Create a 2d graph within the current directory and a low end cutoff of 4
-delanalysis.graph_2d(test_2_data_transformed, "./", 4)
-```
-
-### Working with sample data output
-
-All code below is within python<br><br>
-
-```
-import delanalysis
-
-# Import sample data output from DEL-Decode.  This creates a DelDataSample object
-sample_data = delanalysis.read_sample("test_1.csv")
-
-# zscore
-sample_data_zscore = sample_data.zscore()
-
-# Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
-delanalysis.graph_3d(sample_data_zscore, "./", 4)
-
-# Create a 2d graph within the current directory and a low end cutoff of 4
-delanalysis.graph_2d(sample_data_zscore, "./", 4)
-```
-
-### Resulting graphs
-
-The actual graphs will be interactive HTML graphs with hover data etc. <br><br>
-
-From delanalysis.comparison_graph()<br>
-
-![ "delanalysis.comparison_graph()" ](./comparison_graph.png)<br>
-
-From delanalysis.graph_2d()<br>
-
-![ "delanalysis.graph_2d()" ](./2d_graph.png)<br>
-
-From delanalysis.graph_3d()<br>
-
-![ "delanalysis.graph_3d()" ](./3d_graph.png)<br>
