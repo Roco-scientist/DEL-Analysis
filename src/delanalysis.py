@@ -1,4 +1,5 @@
 import os
+import numpy as np
 import plotly.graph_objects as go
 import re
 
@@ -191,6 +192,30 @@ class DelDataMerged(DelData):
             sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
         return DelDataSample(sample_data, self.data_type, sample_name)
 
+    def sample_enrichment(self, inplace=False):
+        """
+        (sample compound count / total sample counts) / (non-sample compound count / total non-sample counts)
+        """
+        samples_data = self.data.loc[:, self.data_columns()]
+        total_counts = {column: count for column, count in
+                        zip(self.data_columns(), samples_data.sum(0))}
+        sample_enrichment_df = DataFrame()
+        for column in samples_data:
+            sample_data = samples_data.loc[:, column].values / total_counts[column]
+            total_other_reads = 0
+            for other_column in total_counts.keys():
+                if other_column != column:
+                    total_other_reads += total_counts[other_column]
+            all_other_data = (samples_data.drop(columns=[column]).sum(1) / total_other_reads).values
+            sample_enrichment = np.divide(sample_data, all_other_data)
+            sample_enrichment_df[column] = sample_enrichment
+        if inplace:
+            self.data = sample_enrichment_df
+            self.data_type = "sample enrichment"
+            return None
+        else:
+            return DelDataMerged(sample_enrichment_df, "sample enrichment")
+
     def select_samples(self, sample_names: List[str], inplace=False):
         """
         Returns a subset of samples from a DelDataMerged object
@@ -268,12 +293,13 @@ class DelDataSample(DelData):
     def enrichment(self, library_diversity: int, inplace=False):
         """
         From https://doi.org/10.1177%2F2472555218757718
+        count * library diversity / total sample counts
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         total_count = sum(self.data.Count)
         enrichment_score = self.data.Count * library_diversity / total_count
-        enrichment_df = self.data.renamce({"Count": "enrichment"}, axis=1)
+        enrichment_df = self.data.rename({"Count": "enrichment"}, axis=1)
         enrichment_df["enrichment"] = enrichment_score
         if inplace:
             self.data_type = "enrichment"
