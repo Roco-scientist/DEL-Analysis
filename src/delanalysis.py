@@ -73,13 +73,13 @@ class DelData:
         """
         Returns all column names that contain data that is not the barcodes
         """
-        return [col for col in self.data.columns if not re.search("^BB_\d+$", col)]
+        return [col for col in self.data.columns if not re.search("^Barcode_\d+$", col)]
 
     def building_block_columns(self):
         """
         Returns all building block barcode column names
         """
-        return [col for col in self.data if re.search("^BB_\d+$", col)]
+        return [col for col in self.data if re.search("^Barcode_\d+$", col)]
 
     def to_csv(self, out_file: str):
         """
@@ -173,7 +173,7 @@ class DelDataMerged(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         merged_data = merge(self.data, deldata.data,
-                            on=["BB_1", "BB_2", "BB_3"],
+                            on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         if inplace:
             self.data = merged_data
@@ -185,7 +185,7 @@ class DelDataMerged(DelData):
         """
         Outputs a DelDataSample object from the DelDataMerged object
         """
-        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
+        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3", sample_name]]
         if self.data_type == "zscore":
             sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
         else:
@@ -222,7 +222,7 @@ class DelDataMerged(DelData):
         """
         if not isinstance(sample_names, list):
             raise Exception("sample_names needs to be a list of sample names")
-        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3"] + sample_names]
+        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3"] + sample_names]
         if inplace:
             self.data = sample_data
             return None
@@ -253,7 +253,7 @@ class DelDataSample(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1), deldata.data,
-                            on=["BB_1", "BB_2", "BB_3"],
+                            on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         return DelDataMerged(merged_data, self.data_type)
 
@@ -323,11 +323,11 @@ def graph_3d(deldata, out_dir="./", min_score=0):
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
     fig = go.Figure(data=[go.Scatter3d(
-        x=reduced_data.data.BB_1,
-        y=reduced_data.data.BB_2,
-        z=reduced_data.data.BB_3,
+        x=reduced_data.data.Barcode_1,
+        y=reduced_data.data.Barcode_2,
+        z=reduced_data.data.Barcode_3,
         mode='markers',
-        hovertemplate="<b>BB_1<b>: %{x}<br><b>BB_2<b>: %{y}<br><b>BB_3<b>: %{z}<br>%{text}",
+        hovertemplate="<b>Barcode_1<b>: %{x}<br><b>Barcode_2<b>: %{y}<br><b>Barcode_3<b>: %{z}<br>%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -343,9 +343,9 @@ def graph_3d(deldata, out_dir="./", min_score=0):
     # Remove tick labels
     fig.update_layout(
         scene=dict(
-            xaxis=dict(showticklabels=False, title_text="BB_1"),
-            yaxis=dict(showticklabels=False, title_text="BB_2"),
-            zaxis=dict(showticklabels=False, title_text="BB_3"),
+            xaxis=dict(showticklabels=False, title_text="Barcode_1"),
+            yaxis=dict(showticklabels=False, title_text="Barcode_2"),
+            zaxis=dict(showticklabels=False, title_text="Barcode_3"),
         )
     )
     file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
@@ -365,14 +365,14 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    ab = [f"{a},{b}" for a, b in zip(reduced_data.data.BB_1, reduced_data.data.BB_2)]
-    bc = [f"{b},{c}" for b, c in zip(reduced_data.data.BB_2, reduced_data.data.BB_3)]
+    ab = [f"{a},{b}" for a, b in zip(reduced_data.data.Barcode_1, reduced_data.data.Barcode_2)]
+    bc = [f"{b},{c}" for b, c in zip(reduced_data.data.Barcode_2, reduced_data.data.Barcode_3)]
     fig = make_subplots(rows=1, cols=2)
     fig.append_trace(go.Scatter(
         x=ab,
-        y=reduced_data.data.BB_3,
+        y=reduced_data.data.Barcode_3,
         mode='markers',
-        hovertemplate="<b>BB_1, BB_2<b>: %{x}<br><b>BB_3<b>: %{y}<br>%{text}",
+        hovertemplate="<b>Barcode_1, Barcode_2<b>: %{x}<br><b>Barcode_3<b>: %{y}<br>%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -385,15 +385,15 @@ def graph_2d(deldata, out_dir="./", min_score=0):
               reduced_data.data[reduced_data.data_column()]]
 
     ), row=1, col=1)
-    fig["layout"]["xaxis"]["title"] = "BB_1 and BB_2"
+    fig["layout"]["xaxis"]["title"] = "Barcode_1 and Barcode_2"
     fig["layout"]["xaxis"]["showticklabels"] = False
-    fig["layout"]["yaxis"]["title"] = "BB_3"
+    fig["layout"]["yaxis"]["title"] = "Barcode_3"
     fig["layout"]["yaxis"]["showticklabels"] = False
     fig.append_trace(go.Scatter(
         x=bc,
-        y=reduced_data.data.BB_1,
+        y=reduced_data.data.Barcode_1,
         mode='markers',
-        hovertemplate="<b>BB_2, BB_3<b>: %{x}<br><b>BB_1<b>: %{y}<br>%{text}",
+        hovertemplate="<b>Barcode_2, Barcode_3<b>: %{x}<br><b>Barcode_1<b>: %{y}<br>%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -406,9 +406,9 @@ def graph_2d(deldata, out_dir="./", min_score=0):
               reduced_data.data[reduced_data.data_column()]]
 
     ), row=1, col=2)
-    fig["layout"]["xaxis2"]["title"] = "BB_2 and BB_3"
+    fig["layout"]["xaxis2"]["title"] = "Barcode_2 and Barcode_3"
     fig["layout"]["xaxis2"]["showticklabels"] = False
-    fig["layout"]["yaxis2"]["title"] = "BB_1"
+    fig["layout"]["yaxis2"]["title"] = "Barcode_1"
     fig["layout"]["yaxis2"]["showticklabels"] = False
     file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
@@ -424,8 +424,9 @@ def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
         y=reduced_data.data[y_sample].round(3),
         mode='markers',
         hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
-        text=[f"BB_1: {bb_1}<br>BB_2: {bb_2}<br>BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
-              zip(reduced_data.data.BB_1, reduced_data.data.BB_2, reduced_data.data.BB_3)]
+        text=[f"Barcode_1: {bb_1}<br>Barcode_2: {bb_2}<br>Barcode_3: {bb_3}" for bb_1, bb_2, bb_3 in
+              zip(reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
+                  reduced_data.data.Barcode_3)]
     ))
     fig.add_shape(type='line',
                   x0=0,
