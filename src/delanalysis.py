@@ -5,7 +5,7 @@ import re
 
 from datetime import date
 from io import StringIO
-from pandas import read_csv, DataFrame, concat, merge
+from pandas import read_csv, DataFrame, concat, merge, Series
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
 from typing import Optional, Type, List
@@ -62,9 +62,9 @@ class DelData:
         zscore_values = zscore(self.data.loc[:, self.data_columns()].values)
         # Create a dataframe to add the blocks back
         zscore_df = DataFrame(data=zscore_values, columns=self.data_columns())
-        zscore_df_final = concat([self.data.loc[:, self.building_block_columns()], zscore_df],
+        zscore_df_final = concat([self.data.loc[:, self.counted_barcode_columns()], zscore_df],
                                  ignore_index=True, sort=False, axis=1)
-        columns = self.building_block_columns() + self.data_columns()
+        columns = self.counted_barcode_columns() + self.data_columns()
         zscore_df_final.columns = columns
         zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return zscore_df_final
@@ -73,13 +73,13 @@ class DelData:
         """
         Returns all column names that contain data that is not the barcodes
         """
-        return [col for col in self.data.columns if not re.search("^Barcode_\d+$", col)]
+        return [col for col in self.data.columns if not re.search("^Barcode(_\d+){0,1}$", col)]
 
-    def building_block_columns(self):
+    def counted_barcode_columns(self):
         """
         Returns all building block barcode column names
         """
-        return [col for col in self.data if re.search("^Barcode_\d+$", col)]
+        return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
 
     def to_csv(self, out_file: str):
         """
@@ -112,9 +112,9 @@ class DelDataMerged(DelData):
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
             method='min').stack().astype(int).map(rank_mean).unstack()
         quantile_norm_df = concat(
-            [self.data.loc[:, self.building_block_columns()], quantile_norm], ignore_index=True,
+            [self.data.loc[:, self.counted_barcode_columns()], quantile_norm], ignore_index=True,
             sort=False, axis=1)
-        quantile_norm_df.columns = self.building_block_columns() + self.data_columns()
+        quantile_norm_df.columns = self.counted_barcode_columns() + self.data_columns()
         if inplace:
             self.data = quantile_norm_df
             self.data_type = f"quantile normalized {self.data_type}"
@@ -144,9 +144,9 @@ class DelDataMerged(DelData):
         background_data = self.data[background_name]
         del_data_back_sub = del_data.sub(
             background_data, axis=0)
-        del_data_back_sub_df = concat([self.data.loc[:, self.building_block_columns()],
+        del_data_back_sub_df = concat([self.data.loc[:, self.counted_barcode_columns()],
                                        del_data_back_sub], ignore_index=True, sort=False, axis=1)
-        del_data_back_sub_df.columns = self.building_block_columns() + del_data_back_sub.columns.tolist()
+        del_data_back_sub_df.columns = self.counted_barcode_columns() + del_data_back_sub.columns.tolist()
         if inplace:
             self.data = del_data_back_sub_df
             self.data_type = f"{self.data_type} background subtracted"
@@ -309,7 +309,7 @@ class DelDataSample(DelData):
             return DelDataSample(enrichment_df, "enrichment", self.sample_name)
 
 
-def graph_3d(deldata, out_dir="./", min_score=0):
+def graph_3d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None) -> None:
     """
     Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
     only works for 3 barcode data
@@ -317,17 +317,21 @@ def graph_3d(deldata, out_dir="./", min_score=0):
     if not type(deldata) == DelDataSample:
         raise Exception(
             "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
+    if barcodes is None:
+        barcodes = deldata.counted_barcode_columns()
+    if not len(barcodes) >= 3:
+        raise Exception("At least 3 counted barcoded needed for a 3d graph")
     reduced_data = deldata.reduce(min_score)
     max_score = reduced_data.max_score()
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
     fig = go.Figure(data=[go.Scatter3d(
-        x=reduced_data.data.Barcode_1,
-        y=reduced_data.data.Barcode_2,
-        z=reduced_data.data.Barcode_3,
+        x=reduced_data.data[barcodes[0]],
+        y=reduced_data.data[barcodes[1]],
+        z=reduced_data.data[barcodes[2]],
         mode='markers',
-        hovertemplate="<b>Barcode_1<b>: %{x}<br><b>Barcode_2<b>: %{y}<br><b>Barcode_3<b>: %{z}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -337,15 +341,15 @@ def graph_3d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[0]}<b>: {x}<br><b>{barcodes[1]}<b>: {y}<br><b>{barcodes[2]}<b>: {z}<br><b>{reduced_data.data_column()}<b>: {round(score, 3)}" for x, y, z, score in
+              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
     )])
     # Remove tick labels
     fig.update_layout(
         scene=dict(
-            xaxis=dict(showticklabels=False, title_text="Barcode_1"),
-            yaxis=dict(showticklabels=False, title_text="Barcode_2"),
-            zaxis=dict(showticklabels=False, title_text="Barcode_3"),
+            xaxis=dict(showticklabels=False, title_text=barcodes[0]),
+            yaxis=dict(showticklabels=False, title_text=barcodes[1]),
+            zaxis=dict(showticklabels=False, title_text=barcodes[2]),
         )
     )
     file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
@@ -365,6 +369,17 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+    if len(reduced_data.counted_barcode_columns()) >= 3:
+        _graph_2d_3_barcodes(reduced_data, out_dir, sizes)
+    else:
+        raise Exception("Only 3+ counted barcodes supported at this time")
+
+
+def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series):
+    """
+    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+    y-axis the single building block when there are 3 barcodes. 
+    """
     ab = [f"{a},{b}" for a, b in zip(reduced_data.data.Barcode_1, reduced_data.data.Barcode_2)]
     bc = [f"{b},{c}" for b, c in zip(reduced_data.data.Barcode_2, reduced_data.data.Barcode_3)]
     fig = make_subplots(rows=1, cols=2)
@@ -410,7 +425,7 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     fig["layout"]["xaxis2"]["showticklabels"] = False
     fig["layout"]["yaxis2"]["title"] = "Barcode_1"
     fig["layout"]["yaxis2"]["showticklabels"] = False
-    file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.2d.html"
+    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -423,9 +438,9 @@ def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
         x=reduced_data.data[x_sample].round(3),
         y=reduced_data.data[y_sample].round(3),
         mode='markers',
-        hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
-        text=[f"Barcode_1: {bb_1}<br>Barcode_2: {bb_2}<br>Barcode_3: {bb_3}" for bb_1, bb_2, bb_3 in
-              zip(reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
+        hovertemplate="%{text}",
+        text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
+              zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
                   reduced_data.data.Barcode_3)]
     ))
     fig.add_shape(type='line',
@@ -467,7 +482,13 @@ def _test():
     data = read_sample("../../test_del/test_counts.csv", "test")
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
-    data_transformed = data_merge.zscore().quantile_normalize().subtract_background("test_1")
+    print("zscore")
+    data_transformed = data_merge.zscore()
+    print("quantile_normalize")
+    data_transformed.quantile_normalize(inplace=True)
+    print("Subtracting background")
+    data_transformed.subtract_background("test_1", inplace=True)
+    print("Graphing")
     comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
     sample_2 = data_transformed.sample_data("test_2")
     graph_2d(sample_2, "../../test_del/", 4)
