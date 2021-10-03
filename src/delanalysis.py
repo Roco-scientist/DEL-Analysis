@@ -356,7 +356,7 @@ def graph_3d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] =
     fig.write_html(os.path.join(out_dir, file_name))
 
 
-def graph_2d(deldata, out_dir="./", min_score=0):
+def graph_2d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None):
     """
     Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
     y-axis the single building block.  Currently only works for 3 barcode data
@@ -364,30 +364,36 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     if not type(deldata) == DelDataSample:
         raise Exception(
             "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
+    if barcodes is None:
+        barcodes = deldata.counted_barcode_columns()
     reduced_data = deldata.reduce(min_score)
     max_score = reduced_data.max_score()
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    if len(reduced_data.counted_barcode_columns()) >= 3:
-        _graph_2d_3_barcodes(reduced_data, out_dir, sizes)
+    if len(barcodes) >= 3:
+        _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+    elif len(barcodes) == 2:
+        _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
     else:
-        raise Exception("Only 3+ counted barcodes supported at this time")
+        raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
 
 
-def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series):
+def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
     """
     Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
     y-axis the single building block when there are 3 barcodes. 
     """
-    ab = [f"{a},{b}" for a, b in zip(reduced_data.data.Barcode_1, reduced_data.data.Barcode_2)]
-    bc = [f"{b},{c}" for b, c in zip(reduced_data.data.Barcode_2, reduced_data.data.Barcode_3)]
+    ab = [f"{a},{b}" for a, b in zip(reduced_data.data[barcodes[0]],
+                                     reduced_data.data[barcodes[1]])]
+    bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
+                                     reduced_data.data[barcodes[2]])]
     fig = make_subplots(rows=1, cols=2)
     fig.append_trace(go.Scatter(
         x=ab,
-        y=reduced_data.data.Barcode_3,
+        y=reduced_data.data[barcodes[2]],
         mode='markers',
-        hovertemplate="<b>Barcode_1, Barcode_2<b>: %{x}<br><b>Barcode_3<b>: %{y}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -396,19 +402,19 @@ def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[0]}, {barcodes[1]}:<b> {x}<br><b>{barcodes[2]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(ab, reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
 
     ), row=1, col=1)
-    fig["layout"]["xaxis"]["title"] = "Barcode_1 and Barcode_2"
+    fig["layout"]["xaxis"]["title"] = f"{barcodes[0]} and {barcodes[1]}"
     fig["layout"]["xaxis"]["showticklabels"] = False
-    fig["layout"]["yaxis"]["title"] = "Barcode_3"
+    fig["layout"]["yaxis"]["title"] = barcodes[2]
     fig["layout"]["yaxis"]["showticklabels"] = False
     fig.append_trace(go.Scatter(
         x=bc,
-        y=reduced_data.data.Barcode_1,
+        y=reduced_data.data[barcodes[0]],
         mode='markers',
-        hovertemplate="<b>Barcode_2, Barcode_3<b>: %{x}<br><b>Barcode_1<b>: %{y}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -417,14 +423,45 @@ def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[1]}, {barcodes[2]}:<b> {x}<br><b>{barcodes[0]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(bc, reduced_data.data[barcodes[0]], reduced_data.data[reduced_data.data_column()])]
 
     ), row=1, col=2)
-    fig["layout"]["xaxis2"]["title"] = "Barcode_2 and Barcode_3"
+    fig["layout"]["xaxis2"]["title"] = f"{barcodes[1]} and {barcodes[2]}"
     fig["layout"]["xaxis2"]["showticklabels"] = False
-    fig["layout"]["yaxis2"]["title"] = "Barcode_1"
+    fig["layout"]["yaxis2"]["title"] = barcodes[0]
     fig["layout"]["yaxis2"]["showticklabels"] = False
+    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+    fig.write_html(os.path.join(out_dir, file_name))
+
+
+def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    """
+    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+    y-axis the single building block when there are 2 barcodes. 
+    """
+    fig = go.Figure(data=go.Scatter(
+        x=reduced_data.data[barcodes[0]],
+        y=reduced_data.data[barcodes[1]],
+        mode='markers',
+        hovertemplate="%{text}",
+        marker=dict(
+            size=sizes,
+            color=sizes,
+            colorscale='YlOrRd',
+            showscale=True,
+            cmax=max(sizes),
+            cmin=min([0, min(sizes)])
+        ),
+        text=[f"<b>{barcodes[0]}:<b> {x}<br><b>{barcodes[1]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[reduced_data.data_column()])]
+
+    ))
+    fig.update_layout(
+        xaxis_title=barcodes[0],
+        yaxis_title=barcodes[1])
+    fig["layout"]["xaxis"]["showticklabels"] = False
+    fig["layout"]["yaxis"]["showticklabels"] = False
     file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
@@ -492,6 +529,7 @@ def _test():
     comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
     sample_2 = data_transformed.sample_data("test_2")
     graph_2d(sample_2, "../../test_del/", 4)
+    graph_2d(sample_2, "../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
     graph_3d(sample_2, "../../test_del/", 4)
 
 
