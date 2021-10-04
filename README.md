@@ -1,5 +1,5 @@
 # DEL-Analysis
-DNA encoded library analysis.  This is companion software to DEL-Decode for outputing analysis and graphs.
+DNA encoded library analysis.  This is companion software to <a href=https://github.com/Roco-scientist/NGS-Barcode-Count>NGS-Barcode-Count</a> and <a href=https://github.com/Roco-scientist/DEL-Decode>DEL-Decode</a> for outputing analysis and graphs.
 
 ## Table of Contents
 <ul>
