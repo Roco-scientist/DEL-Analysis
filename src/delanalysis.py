@@ -5,7 +5,8 @@ import re
 
 from datetime import date
 from io import StringIO
-from pandas import read_csv, DataFrame, concat, merge, Series
+from pandas import read_csv, DataFrame, concat, merge, Series, notna
+
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
 from typing import Optional, Type, List
@@ -80,6 +81,14 @@ class DelData:
         Returns all building block barcode column names
         """
         return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
+
+    def number_barcodes(self) -> List[int]:
+        """
+        Returns the bumber of barcodes for each row of the data
+        """
+        barcode_data = self.data.loc[:, self.counted_barcode_columns()]
+        return notna(barcode_data).sum(axis=1).tolist()
+
 
     def to_csv(self, out_file: str):
         """
@@ -180,6 +189,17 @@ class DelDataMerged(DelData):
             return None
         else:
             return DelDataMerged(merged_data, self.data_type)
+
+    def concat(self, deldata, inplace=False):
+        if any([col not in deldata.data.columns for col in self.data.columns])\
+                or any([col not in self.data.columns for col in deldata.data.columns]):
+            raise Exception("Data column mismatch")
+        concat_data = concat([self.data, deldata.data], ignore_index=True, sort=False)
+        if inplace:
+            self.data = concat_data
+            return None
+        else:
+            return DelDataMerged(concat_data, self.data_type)
 
     def sample_data(self, sample_name: str):
         """
@@ -471,10 +491,13 @@ def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
         raise Exception("Comparison graph only works for merged data")
     reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
     max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
+    colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
     fig = go.Figure(data=go.Scatter(
         x=reduced_data.data[x_sample].round(3),
         y=reduced_data.data[y_sample].round(3),
         mode='markers',
+        marker=dict(color=list(
+            map(lambda index: colors[index], reduced_data.number_barcodes()))),
         hovertemplate="%{text}",
         text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
               zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
@@ -516,6 +539,7 @@ def read_sample(file_path: str, sample_name: str):
 
 def _test():
     "Setup for testing"
+
     data = read_sample("../../test_del/test_counts.csv", "test")
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
