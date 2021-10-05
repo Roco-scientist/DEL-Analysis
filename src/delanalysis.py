@@ -6,6 +6,7 @@ import re
 from datetime import date
 from io import StringIO
 from pandas import read_csv, DataFrame, concat, merge, Series, notna
+
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
 from typing import Optional, Type, List
@@ -87,6 +88,7 @@ class DelData:
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
         return notna(barcode_data).sum(axis=1).tolist()
+
 
     def to_csv(self, out_file: str):
         """
@@ -537,20 +539,22 @@ def read_sample(file_path: str, sample_name: str):
 
 def _test():
     "Setup for testing"
-    # data = read_sample("../../test_del/test_counts.csv", "test")
-    # data_merge = read_merged("../../test_del/test_counts.all.csv")
-    # print("Transforming data")
-    # print("zscore")
-    # data_transformed = data_merge.zscore()
-    # print("quantile_normalize")
-    # data_transformed.quantile_normalize(inplace=True)
-    # print("Subtracting background")
-    # data_transformed.subtract_background("test_1", inplace=True)
+
+    data = read_sample("../../test_del/test_counts.csv", "test")
+    data_merge = read_merged("../../test_del/test_counts.all.csv")
+    print("Transforming data")
+    print("zscore")
+    data_transformed = data_merge.zscore()
+    print("quantile_normalize")
+    data_transformed.quantile_normalize(inplace=True)
+    print("Subtracting background")
+    data_transformed.subtract_background("test_1", inplace=True)
     print("Graphing")
-    # sample_2 = data_transformed.sample_data("test_2")
-    # graph_2d(sample_2, "../../test_del/", 4)
-    # graph_2d(sample_2, "../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
-    # graph_3d(sample_2, "../../test_del/", 4)
+    comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
+    sample_2 = data_transformed.sample_data("test_2")
+    graph_2d(sample_2, "../../test_del/", 4)
+    graph_2d(sample_2, "../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
+    graph_3d(sample_2, "../../test_del/", 4)
 
 
 def main():
