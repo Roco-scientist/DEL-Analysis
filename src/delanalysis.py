@@ -1,10 +1,11 @@
 import os
+import numpy as np
 import plotly.graph_objects as go
 import re
 
 from datetime import date
 from io import StringIO
-from pandas import read_csv, DataFrame, concat, merge
+from pandas import read_csv, DataFrame, concat, merge, Series, notna
 from plotly.subplots import make_subplots
 from scipy.stats import zscore
 from typing import Optional, Type, List
@@ -61,9 +62,9 @@ class DelData:
         zscore_values = zscore(self.data.loc[:, self.data_columns()].values)
         # Create a dataframe to add the blocks back
         zscore_df = DataFrame(data=zscore_values, columns=self.data_columns())
-        zscore_df_final = concat([self.data.loc[:, self.building_block_columns()], zscore_df],
+        zscore_df_final = concat([self.data.loc[:, self.counted_barcode_columns()], zscore_df],
                                  ignore_index=True, sort=False, axis=1)
-        columns = self.building_block_columns() + self.data_columns()
+        columns = self.counted_barcode_columns() + self.data_columns()
         zscore_df_final.columns = columns
         zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return zscore_df_final
@@ -72,13 +73,20 @@ class DelData:
         """
         Returns all column names that contain data that is not the barcodes
         """
-        return [col for col in self.data.columns if not re.search("^BB_\d+$", col)]
+        return [col for col in self.data.columns if not re.search("^Barcode(_\d+){0,1}$", col)]
 
-    def building_block_columns(self):
+    def counted_barcode_columns(self):
         """
         Returns all building block barcode column names
         """
-        return [col for col in self.data if re.search("^BB_\d+$", col)]
+        return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
+
+    def number_barcodes(self) -> List[int]:
+        """
+        Returns the bumber of barcodes for each row of the data
+        """
+        barcode_data = self.data.loc[:, self.counted_barcode_columns()]
+        return notna(barcode_data).sum(axis=1).tolist()
 
     def to_csv(self, out_file: str):
         """
@@ -111,9 +119,9 @@ class DelDataMerged(DelData):
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
             method='min').stack().astype(int).map(rank_mean).unstack()
         quantile_norm_df = concat(
-            [self.data.loc[:, self.building_block_columns()], quantile_norm], ignore_index=True,
+            [self.data.loc[:, self.counted_barcode_columns()], quantile_norm], ignore_index=True,
             sort=False, axis=1)
-        quantile_norm_df.columns = self.building_block_columns() + self.data_columns()
+        quantile_norm_df.columns = self.counted_barcode_columns() + self.data_columns()
         if inplace:
             self.data = quantile_norm_df
             self.data_type = f"quantile normalized {self.data_type}"
@@ -143,9 +151,9 @@ class DelDataMerged(DelData):
         background_data = self.data[background_name]
         del_data_back_sub = del_data.sub(
             background_data, axis=0)
-        del_data_back_sub_df = concat([self.data.loc[:, self.building_block_columns()],
+        del_data_back_sub_df = concat([self.data.loc[:, self.counted_barcode_columns()],
                                        del_data_back_sub], ignore_index=True, sort=False, axis=1)
-        del_data_back_sub_df.columns = self.building_block_columns() + del_data_back_sub.columns.tolist()
+        del_data_back_sub_df.columns = self.counted_barcode_columns() + del_data_back_sub.columns.tolist()
         if inplace:
             self.data = del_data_back_sub_df
             self.data_type = f"{self.data_type} background subtracted"
@@ -172,7 +180,7 @@ class DelDataMerged(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         merged_data = merge(self.data, deldata.data,
-                            on=["BB_1", "BB_2", "BB_3"],
+                            on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         if inplace:
             self.data = merged_data
@@ -180,16 +188,51 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(merged_data, self.data_type)
 
+    def concat(self, deldata, inplace=False):
+        if any([col not in deldata.data.columns for col in self.data.columns])\
+                or any([col not in self.data.columns for col in deldata.data.columns]):
+            raise Exception("Data column mismatch")
+        concat_data = concat([self.data, deldata.data], ignore_index=True, sort=False)
+        if inplace:
+            self.data = concat_data
+            return None
+        else:
+            return DelDataMerged(concat_data, self.data_type)
+
     def sample_data(self, sample_name: str):
         """
         Outputs a DelDataSample object from the DelDataMerged object
         """
-        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3", sample_name]]
+        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3", sample_name]]
         if self.data_type == "zscore":
             sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
         else:
             sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
         return DelDataSample(sample_data, self.data_type, sample_name)
+
+    def sample_enrichment(self, inplace=False):
+        """
+        (sample compound count / total sample counts) / (non-sample compound count / total non-sample counts)
+        """
+        samples_data = self.data.loc[:, self.data_columns()]
+        total_counts = {column: count for column, count in
+                        zip(self.data_columns(), samples_data.sum(0))}
+        sample_enrichment_df = DataFrame()
+        for column in samples_data:
+            sample_data = samples_data.loc[:, column].values / total_counts[column]
+            total_other_reads = 0
+            for other_column in total_counts.keys():
+                if other_column != column:
+                    total_other_reads += total_counts[other_column]
+            all_other_data = (samples_data.drop(columns=[column]).sum(1) / total_other_reads).values
+            sample_enrichment = np.divide(sample_data, all_other_data)
+            sample_enrichment_df[column] = sample_enrichment
+        if inplace:
+            self.data = sample_enrichment_df
+            self.data_type = "sample enrichment"
+            return None
+        else:
+            return DelDataMerged(sample_enrichment_df, "sample enrichment")
 
     def select_samples(self, sample_names: List[str], inplace=False):
         """
@@ -197,7 +240,7 @@ class DelDataMerged(DelData):
         """
         if not isinstance(sample_names, list):
             raise Exception("sample_names needs to be a list of sample names")
-        sample_data = self.data.loc[:, ["BB_1", "BB_2", "BB_3"] + sample_names]
+        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3"] + sample_names]
         if inplace:
             self.data = sample_data
             return None
@@ -228,7 +271,7 @@ class DelDataSample(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1), deldata.data,
-                            on=["BB_1", "BB_2", "BB_3"],
+                            on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         return DelDataMerged(merged_data, self.data_type)
 
@@ -265,8 +308,26 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(zscore_df, "zscore", self.sample_name)
 
+    def enrichment(self, library_diversity: int, inplace=False):
+        """
+        From https://doi.org/10.1177%2F2472555218757718
+        count * library diversity / total sample counts
+        """
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
+        total_count = sum(self.data.Count)
+        enrichment_score = self.data.Count * library_diversity / total_count
+        enrichment_df = self.data.rename({"Count": "enrichment"}, axis=1)
+        enrichment_df["enrichment"] = enrichment_score
+        if inplace:
+            self.data_type = "enrichment"
+            self.data = enrichment_df
+            return None
+        else:
+            return DelDataSample(enrichment_df, "enrichment", self.sample_name)
 
-def graph_3d(deldata, out_dir="./", min_score=0):
+
+def graph_3d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None) -> None:
     """
     Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
     only works for 3 barcode data
@@ -274,17 +335,21 @@ def graph_3d(deldata, out_dir="./", min_score=0):
     if not type(deldata) == DelDataSample:
         raise Exception(
             "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
+    if barcodes is None:
+        barcodes = deldata.counted_barcode_columns()
+    if not len(barcodes) >= 3:
+        raise Exception("At least 3 counted barcoded needed for a 3d graph")
     reduced_data = deldata.reduce(min_score)
     max_score = reduced_data.max_score()
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
     fig = go.Figure(data=[go.Scatter3d(
-        x=reduced_data.data.BB_1,
-        y=reduced_data.data.BB_2,
-        z=reduced_data.data.BB_3,
+        x=reduced_data.data[barcodes[0]],
+        y=reduced_data.data[barcodes[1]],
+        z=reduced_data.data[barcodes[2]],
         mode='markers',
-        hovertemplate="<b>BB_1<b>: %{x}<br><b>BB_2<b>: %{y}<br><b>BB_3<b>: %{z}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -294,22 +359,22 @@ def graph_3d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[0]}<b>: {x}<br><b>{barcodes[1]}<b>: {y}<br><b>{barcodes[2]}<b>: {z}<br><b>{reduced_data.data_column()}<b>: {round(score, 3)}" for x, y, z, score in
+              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
     )])
     # Remove tick labels
     fig.update_layout(
         scene=dict(
-            xaxis=dict(showticklabels=False, title_text="BB_1"),
-            yaxis=dict(showticklabels=False, title_text="BB_2"),
-            zaxis=dict(showticklabels=False, title_text="BB_3"),
+            xaxis=dict(showticklabels=False, title_text=barcodes[0]),
+            yaxis=dict(showticklabels=False, title_text=barcodes[1]),
+            zaxis=dict(showticklabels=False, title_text=barcodes[2]),
         )
     )
     file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
-def graph_2d(deldata, out_dir="./", min_score=0):
+def graph_2d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None):
     """
     Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
     y-axis the single building block.  Currently only works for 3 barcode data
@@ -317,19 +382,36 @@ def graph_2d(deldata, out_dir="./", min_score=0):
     if not type(deldata) == DelDataSample:
         raise Exception(
             "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
+    if barcodes is None:
+        barcodes = deldata.counted_barcode_columns()
     reduced_data = deldata.reduce(min_score)
     max_score = reduced_data.max_score()
     max_point_size = 12
     sizes = reduced_data.data[reduced_data.data_column()].apply(
         lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    ab = [f"{a},{b}" for a, b in zip(reduced_data.data.BB_1, reduced_data.data.BB_2)]
-    bc = [f"{b},{c}" for b, c in zip(reduced_data.data.BB_2, reduced_data.data.BB_3)]
+    if len(barcodes) >= 3:
+        _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+    elif len(barcodes) == 2:
+        _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
+    else:
+        raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
+
+
+def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    """
+    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+    y-axis the single building block when there are 3 barcodes. 
+    """
+    ab = [f"{a},{b}" for a, b in zip(reduced_data.data[barcodes[0]],
+                                     reduced_data.data[barcodes[1]])]
+    bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
+                                     reduced_data.data[barcodes[2]])]
     fig = make_subplots(rows=1, cols=2)
     fig.append_trace(go.Scatter(
         x=ab,
-        y=reduced_data.data.BB_3,
+        y=reduced_data.data[barcodes[2]],
         mode='markers',
-        hovertemplate="<b>BB_1, BB_2<b>: %{x}<br><b>BB_3<b>: %{y}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -338,19 +420,19 @@ def graph_2d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[0]}, {barcodes[1]}:<b> {x}<br><b>{barcodes[2]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(ab, reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
 
     ), row=1, col=1)
-    fig["layout"]["xaxis"]["title"] = "BB_1 and BB_2"
+    fig["layout"]["xaxis"]["title"] = f"{barcodes[0]} and {barcodes[1]}"
     fig["layout"]["xaxis"]["showticklabels"] = False
-    fig["layout"]["yaxis"]["title"] = "BB_3"
+    fig["layout"]["yaxis"]["title"] = barcodes[2]
     fig["layout"]["yaxis"]["showticklabels"] = False
     fig.append_trace(go.Scatter(
         x=bc,
-        y=reduced_data.data.BB_1,
+        y=reduced_data.data[barcodes[0]],
         mode='markers',
-        hovertemplate="<b>BB_2, BB_3<b>: %{x}<br><b>BB_1<b>: %{y}<br>%{text}",
+        hovertemplate="%{text}",
         marker=dict(
             size=sizes,
             color=sizes,
@@ -359,15 +441,46 @@ def graph_2d(deldata, out_dir="./", min_score=0):
             cmax=max(sizes),
             cmin=min([0, min(sizes)])
         ),
-        text=[f"{reduced_data.data_column()}: {round(score, 3)}" for score in
-              reduced_data.data[reduced_data.data_column()]]
+        text=[f"<b>{barcodes[1]}, {barcodes[2]}:<b> {x}<br><b>{barcodes[0]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(bc, reduced_data.data[barcodes[0]], reduced_data.data[reduced_data.data_column()])]
 
     ), row=1, col=2)
-    fig["layout"]["xaxis2"]["title"] = "BB_2 and BB_3"
+    fig["layout"]["xaxis2"]["title"] = f"{barcodes[1]} and {barcodes[2]}"
     fig["layout"]["xaxis2"]["showticklabels"] = False
-    fig["layout"]["yaxis2"]["title"] = "BB_1"
+    fig["layout"]["yaxis2"]["title"] = barcodes[0]
     fig["layout"]["yaxis2"]["showticklabels"] = False
-    file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.2d.html"
+    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+    fig.write_html(os.path.join(out_dir, file_name))
+
+
+def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    """
+    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+    y-axis the single building block when there are 2 barcodes. 
+    """
+    fig = go.Figure(data=go.Scatter(
+        x=reduced_data.data[barcodes[0]],
+        y=reduced_data.data[barcodes[1]],
+        mode='markers',
+        hovertemplate="%{text}",
+        marker=dict(
+            size=sizes,
+            color=sizes,
+            colorscale='YlOrRd',
+            showscale=True,
+            cmax=max(sizes),
+            cmin=min([0, min(sizes)])
+        ),
+        text=[f"<b>{barcodes[0]}:<b> {x}<br><b>{barcodes[1]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[reduced_data.data_column()])]
+
+    ))
+    fig.update_layout(
+        xaxis_title=barcodes[0],
+        yaxis_title=barcodes[1])
+    fig["layout"]["xaxis"]["showticklabels"] = False
+    fig["layout"]["yaxis"]["showticklabels"] = False
+    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
     fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -376,13 +489,17 @@ def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_s
         raise Exception("Comparison graph only works for merged data")
     reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
     max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
+    colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
     fig = go.Figure(data=go.Scatter(
         x=reduced_data.data[x_sample].round(3),
         y=reduced_data.data[y_sample].round(3),
         mode='markers',
-        hovertemplate="<b>X<b>: %{x}<br><b>Y<b>: %{y}<br>%{text}",
-        text=[f"BB_1: {bb_1}<br>BB_2: {bb_2}<br>BB_3: {bb_3}" for bb_1, bb_2, bb_3 in
-              zip(reduced_data.data.BB_1, reduced_data.data.BB_2, reduced_data.data.BB_3)]
+        marker=dict(color=list(
+            map(lambda index: colors[index], reduced_data.number_barcodes()))),
+        hovertemplate="%{text}",
+        text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
+              zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
+                  reduced_data.data.Barcode_3)]
     ))
     fig.add_shape(type='line',
                   x0=0,
@@ -420,14 +537,20 @@ def read_sample(file_path: str, sample_name: str):
 
 def _test():
     "Setup for testing"
-    data = read_sample("../../test_del/test_counts.csv", "test")
-    data_merge = read_merged("../../test_del/test_counts.all.csv")
-    print("Transforming data")
-    data_transformed = data_merge.zscore().quantile_normalize().subtract_background("test_1")
-    comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
-    sample_2 = data_transformed.sample_data("test_2")
-    graph_2d(sample_2, "../../test_del/", 4)
-    graph_3d(sample_2, "../../test_del/", 4)
+    # data = read_sample("../../test_del/test_counts.csv", "test")
+    # data_merge = read_merged("../../test_del/test_counts.all.csv")
+    # print("Transforming data")
+    # print("zscore")
+    # data_transformed = data_merge.zscore()
+    # print("quantile_normalize")
+    # data_transformed.quantile_normalize(inplace=True)
+    # print("Subtracting background")
+    # data_transformed.subtract_background("test_1", inplace=True)
+    print("Graphing")
+    # sample_2 = data_transformed.sample_data("test_2")
+    # graph_2d(sample_2, "../../test_del/", 4)
+    # graph_2d(sample_2, "../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
+    # graph_3d(sample_2, "../../test_del/", 4)
 
 
 def main():
