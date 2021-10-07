@@ -70,6 +70,18 @@ class DelData:
         zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return zscore_df_final
 
+    def _binomial_zscore(self, del_library_size: int):
+        expected_probability = 1/del_library_size
+        total_counts = self.data[self.data_columns()].sum(axis=1)
+        expected_counts = total_counts * expected_probability
+        binomial_sds = np.std(total_counts * (expected_probability * (1 - expected_probability)))
+        count_minus_expected = self.data[self.data_columns()].values - expected_counts
+        zscore = count_minus_expected / binomial_sds[:, None]
+        new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
+                        ignore_index=True, sort=False)
+        new_df.columns = self.counted_barcode_columns() + self.data_columns()
+        return new_df
+
     def data_columns(self):
         """
         Returns all column names that contain data that is not the barcodes
@@ -88,7 +100,6 @@ class DelData:
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
         return notna(barcode_data).sum(axis=1).tolist()
-
 
     def to_csv(self, out_file: str):
         """
@@ -258,6 +269,15 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(zscore_df, data_type="zscore")
 
+    def binomial_zscore(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore")
+
 
 class DelDataSample(DelData):
     """
@@ -309,6 +329,15 @@ class DelDataSample(DelData):
             return None
         else:
             return DelDataSample(zscore_df, "zscore", self.sample_name)
+
+    def binomial_zscore(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataSample(binomial_zscore_df, "binomial_zscore", self.sample_name)
 
     def enrichment(self, library_diversity: int, inplace=False):
         """
