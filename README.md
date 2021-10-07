@@ -64,7 +64,7 @@ import delanalysis
 merged_data = delanalysis.read_merged("test_counts.all.csv")
 
 # zscore, then quantile_normalize, then subtract background which is 'test_1'
-merged_data_transformed = merged_data.zscore().quantile_normalize().subtract_background("test_1")
+merged_data_transformed = merged_data.binomial_zscore().quantile_normalize().subtract_background("test_1")
 
 # Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
 delanalysis.comparison_graph(merged_data_transformed, "test_2", "test_3", "./", 4)
@@ -90,7 +90,7 @@ import delanalysis
 sample_data = delanalysis.read_sample("test_1.csv")
 
 # zscore
-sample_data_zscore = sample_data.zscore()
+sample_data_zscore = sample_data.binomial_zscore()
 
 # Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
 delanalysis.graph_3d(sample_data_zscore, "./", 4)
@@ -143,6 +143,12 @@ Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
 <tr>
 <td>zscore(inplace=False)</td> <td>z-scores the data</td>
 </tr>
+<tr>
+<td>binomial_zscore(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation</td>
+</tr>
+<tr>
+<td>enrichemnt(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
+</tr>
 </table>
 
 ### Merged data
@@ -155,6 +161,9 @@ Used with delanalysis.read_merged() which creates a DelDataMerged object
 </tr>
 <tr>
 <td>quantile_normalize(inplace=False)</td> <td>quantile normalizes the data</td>
+</tr>
+<tr>
+<td>sample_enrichment(inplace=False)</td> <td>(sample_count/total_sample_count)/(non_sample_count/total_non_sample_count).  Still experimental as if the count only happens in one sample, a div 0 error occurs</td>
 </tr>
 <tr>
 <td>subtract_background(background_name, inplace=False)</td> <td>subtracts the background_name sample from all other samples</td>
