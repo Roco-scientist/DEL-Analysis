@@ -147,7 +147,7 @@ Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
 <td>binomial_zscore(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation</td>
 </tr>
 <tr>
-<td>enrichemnt(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
+<td>enrichment(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
 </tr>
 </table>
 
