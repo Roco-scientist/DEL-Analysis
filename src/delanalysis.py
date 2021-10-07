@@ -1,4 +1,5 @@
 import os
+import math
 import numpy as np
 import plotly.graph_objects as go
 import re
@@ -71,15 +72,20 @@ class DelData:
         return zscore_df_final
 
     def _binomial_zscore(self, del_library_size: int):
-        expected_probability = 1/del_library_size
-        total_counts = self.data[self.data_columns()].sum(axis=1)
+        """
+        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Where the denominator is the binomial standard deviation
+        """
+        expected_probability = 1/del_library_size  # get the probability as 1/library size
+        total_counts = self.data[self.data_columns()].sum(axis=0).values
         expected_counts = total_counts * expected_probability
-        binomial_sds = np.std(total_counts * (expected_probability * (1 - expected_probability)))
+        binomial_sds = np.sqrt(total_counts * (expected_probability * (1 - expected_probability)))
         count_minus_expected = self.data[self.data_columns()].values - expected_counts
-        zscore = count_minus_expected / binomial_sds[:, None]
+        zscore = count_minus_expected / binomial_sds
         new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
-                        ignore_index=True, sort=False)
+                        ignore_index=True, sort=False, axis=1)
         new_df.columns = self.counted_barcode_columns() + self.data_columns()
+        new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return new_df
 
     def data_columns(self):
@@ -573,7 +579,9 @@ def _test():
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
     print("zscore")
-    data_transformed = data_merge.zscore()
+    # data_transformed = data_merge.zscore()
+    data_transformed = data_merge.binomial_zscore(len(data_merge.data.index))
+    breakpoint()
     print("quantile_normalize")
     data_transformed.quantile_normalize(inplace=True)
     print("Subtracting background")
