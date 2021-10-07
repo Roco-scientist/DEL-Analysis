@@ -1,4 +1,5 @@
 import os
+import math
 import numpy as np
 import plotly.graph_objects as go
 import re
@@ -59,6 +60,8 @@ class DelData:
     def _zscore(self):
         if self.data_type == "zscore":
             raise Exception("Data is already zscored")
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
         # Get the zscore of the count columns
         zscore_values = zscore(self.data.loc[:, self.data_columns()].values)
         # Create a dataframe to add the blocks back
@@ -69,6 +72,44 @@ class DelData:
         zscore_df_final.columns = columns
         zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return zscore_df_final
+
+    def _binomial_zscore(self, del_library_size: int):
+        """
+        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Where the denominator is the binomial standard deviation
+        """
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
+        expected_probability = 1/del_library_size  # get the probability as 1/library size
+        total_counts = self.total_counts()
+        expected_counts = total_counts * expected_probability
+        binomial_sds = np.sqrt(total_counts * (expected_probability * (1 - expected_probability)))
+        count_minus_expected = self.data[self.data_columns()].values - expected_counts
+        zscore = count_minus_expected / binomial_sds
+        new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
+                        ignore_index=True, sort=False, axis=1)
+        new_df.columns = self.counted_barcode_columns() + self.data_columns()
+        new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
+        return new_df
+
+    def _enrichment(self, del_library_size: int, inplace=False):
+        """
+        From https://doi.org/10.1177%2F2472555218757718
+        count * library diversity / total sample counts
+        """
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
+        enrichment_score = self.data[self.data_columns()].values * \
+            del_library_size / self.total_counts()
+        enrichment_df = concat([self.data[self.counted_barcode_columns()],
+                                DataFrame(data=enrichment_score)],
+                               ignore_index=True, sort=False, axis=1)
+        enrichment_df.columns = self.counted_barcode_columns() + self.data_columns()
+        enrichment_df.rename({"Count": "enrichment"}, axis=1, inplace=True)
+        return enrichment_df
+
+    def total_counts(self):
+        return self.data[self.data_columns()].sum(axis=0).values
 
     def data_columns(self):
         """
@@ -88,7 +129,6 @@ class DelData:
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
         return notna(barcode_data).sum(axis=1).tolist()
-
 
     def to_csv(self, out_file: str):
         """
@@ -258,6 +298,28 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(zscore_df, data_type="zscore")
 
+    def binomial_zscore(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore")
+
+    def enrichment(self, del_library_size: int, inplace=False):
+        """
+        From https://doi.org/10.1177%2F2472555218757718
+        count * library diversity / total sample counts
+        """
+        enrichment_df = self._enrichment(del_library_size)
+        if inplace:
+            self.data_type = "enrichment"
+            self.data = enrichment_df
+            return None
+        else:
+            return DelDataMerged(enrichment_df, data_type="enrichment")
+
 
 class DelDataSample(DelData):
     """
@@ -310,17 +372,21 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(zscore_df, "zscore", self.sample_name)
 
-    def enrichment(self, library_diversity: int, inplace=False):
+    def binomial_zscore(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataSample(binomial_zscore_df, "binomial_zscore", self.sample_name)
+
+    def enrichment(self, del_library_size: int, inplace=False):
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
         """
-        if self.data_type != "Count":
-            raise Exception("This calculation is meant for raw counts")
-        total_count = sum(self.data.Count)
-        enrichment_score = self.data.Count * library_diversity / total_count
-        enrichment_df = self.data.rename({"Count": "enrichment"}, axis=1)
-        enrichment_df["enrichment"] = enrichment_score
+        enrichment_df = self._enrichment(del_library_size)
         if inplace:
             self.data_type = "enrichment"
             self.data = enrichment_df
@@ -544,7 +610,9 @@ def _test():
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
     print("zscore")
-    data_transformed = data_merge.zscore()
+    # data_transformed = data_merge.zscore()
+    data_transformed = data_merge.binomial_zscore(len(data_merge.data.index))
+    breakpoint()
     print("quantile_normalize")
     data_transformed.quantile_normalize(inplace=True)
     print("Subtracting background")
