@@ -171,6 +171,9 @@ Used with delanalysis.read_merged() which creates a DelDataMerged object
 <tr>
 <td>select_samples(sample_names: List, inplace=False)</td> <td>Reduces the data to the listed sample names</td>
 </tr>
+<tr>
+<td>comparison_graph(x_sample, y_sample, out_dir, min_score=0)</td> <td>Outputs a comparison graph of x_sample vs y_sample names. Only works with DelDataMerged objects</td>
+</tr>
 </table>
 
 ### Sample data
@@ -190,21 +193,10 @@ Used with delanalysis.read_sample() which creates a DelDataSample object
 <tr>
 <td>data_column()</td> <td>Returns the data column name</td>
 </tr>
-</table>
-
-### delanalysis methods
-
-<table>
 <tr>
-<th>Method</th> <th>Description</th>
+<td>graph_2d(out_dir, min_score=0)</td> <td>Produces two subplot 2d graphs for the different barcodes of a DelDataSample. Will not work with DelDataMerged objects</td>
 </tr>
 <tr>
-<td>delanalysis.comparison_graph(DelDataMerged, x_sample, y_sample, out_dir, min_score=0)</td> <td>Outputs a comparison graph of x_sample vs y_sample names. Only works with DelDataMerged objects</td>
-</tr>
-<tr>
-<td>delanalysis.graph_2d(DelDataSample, out_dir, min_score=0)</td> <td>Produces two subplot 2d graphs for the different barcodes of a DelDataSample. Will not work with DelDataMerged objects</td>
-</tr>
-<tr>
-<td>delanalysis.graph_3d(DelDataSample, out_dir, min_score=0)</td> <td>Produces 3d graphs for the different barcodes of a DelDataSample. Will not work with DelDataMerged objects</td>
+<td>graph_3d(out_dir, min_score=0)</td> <td>Produces 3d graphs for the different barcodes of a DelDataSample. Will not work with DelDataMerged objects</td>
 </tr>
 </table>
