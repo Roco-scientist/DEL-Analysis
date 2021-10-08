@@ -75,6 +75,7 @@ class DelData:
 
     def _binomial_zscore(self, del_library_size: int):
         """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
         Where the denominator is the binomial standard deviation
         """
@@ -82,10 +83,28 @@ class DelData:
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
         total_counts = self.total_counts()
-        expected_counts = total_counts * expected_probability
-        binomial_sds = np.sqrt(total_counts * (expected_probability * (1 - expected_probability)))
-        count_minus_expected = self.data[self.data_columns()].values - expected_counts
-        zscore = count_minus_expected / binomial_sds
+        observed_probability = self.data[self.data_columns()].values / total_counts
+        denominator = math.sqrt(expected_probability * (1 - expected_probability))
+        zscore = np.sqrt(total_counts) * (observed_probability - expected_probability) / denominator
+        new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
+                        ignore_index=True, sort=False, axis=1)
+        new_df.columns = self.counted_barcode_columns() + self.data_columns()
+        new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
+        return new_df
+
+    def _binomial_zscore_sample_normalized(self, del_library_size: int):
+        """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
+        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Where the denominator is the binomial standard deviation
+        """
+        if self.data_type != "Count":
+            raise Exception("This calculation is meant for raw counts")
+        expected_probability = 1/del_library_size  # get the probability as 1/library size
+        total_counts = self.total_counts()
+        observed_probability = self.data[self.data_columns()].values / total_counts
+        denominator = math.sqrt(expected_probability * (1 - expected_probability))
+        zscore = (observed_probability - expected_probability) / denominator
         new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
                         ignore_index=True, sort=False, axis=1)
         new_df.columns = self.counted_barcode_columns() + self.data_columns()
@@ -307,6 +326,15 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore")
 
+    def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore_sample_normalized(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore_sample_normalized"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore_sample_normalized")
+
     def enrichment(self, del_library_size: int, inplace=False):
         """
         From https://doi.org/10.1177%2F2472555218757718
@@ -380,6 +408,15 @@ class DelDataSample(DelData):
             return None
         else:
             return DelDataSample(binomial_zscore_df, "binomial_zscore", self.sample_name)
+
+    def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
+        binomial_zscore_df = self._binomial_zscore_sample_normalized(del_library_size)
+        if inplace:
+            self.data_type = "binomial_zscore_sample_normalized"
+            self.data = binomial_zscore_df
+            return None
+        else:
+            return DelDataSample(binomial_zscore_df, "binomial_zscore_sample_normalized", self.sample_name)
 
     def enrichment(self, del_library_size: int, inplace=False):
         """
