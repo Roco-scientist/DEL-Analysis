@@ -47,7 +47,7 @@ All code below is within python<br><br>
 ```
 import delanalysis
 
-# Import merged data output from DEL-Decode.  This creates a DelDataMerged object
+# Import merged data output from NGS-Barcode-Count.  This creates a DelDataMerged object
 merged_data = delanalysis.read_merged("test_counts.all.csv")
 
 # zscore, then quantile_normalize, then subtract background which is 'test_1'
@@ -76,7 +76,7 @@ All code below is within python<br><br>
 ```
 import delanalysis
 
-# Import sample data output from DEL-Decode.  This creates a DelDataSample object
+# Import sample data output from NGS-Barcode-Count.  This creates a DelDataSample object
 sample_data = delanalysis.read_sample("test_1.csv")
 
 # zscore
