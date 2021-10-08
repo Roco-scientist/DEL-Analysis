@@ -320,6 +320,37 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(enrichment_df, data_type="enrichment")
 
+    def comparison_graph(self, x_sample: str, y_sample: str, out_dir, min_score=0):
+        """
+        Compares two samples on a single graph where x_sample is on the x axis with the enrichment
+        or count and y_sample is on the y_axis
+        """
+        reduced_data = self.select_samples([x_sample, y_sample]).reduce(min_score)
+        max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
+        colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
+        fig = go.Figure(data=go.Scatter(
+            x=reduced_data.data[x_sample].round(3),
+            y=reduced_data.data[y_sample].round(3),
+            mode='markers',
+            marker=dict(color=list(
+                map(lambda index: colors[index], reduced_data.number_barcodes()))),
+            hovertemplate="%{text}",
+            text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
+                  zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
+                      reduced_data.data.Barcode_3)]
+        ))
+        fig.add_shape(type='line',
+                      x0=0,
+                      y0=0,
+                      x1=max_value,
+                      y1=max_value,
+                      line=dict(color='Red'))
+        fig.update_layout(
+            xaxis_title=f"{x_sample} {reduced_data.data_type}",
+            yaxis_title=f"{y_sample} {reduced_data.data_type}")
+        file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{deldatamerged.data_descriptor()}.2d.html"
+        fig.write_html(os.path.join(out_dir, file_name))
+
 
 class DelDataSample(DelData):
     """
@@ -394,192 +425,152 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(enrichment_df, "enrichment", self.sample_name)
 
+    def graph_2d(self, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None):
+        """
+        Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+        y-axis the single building block.  Currently only works for 3 barcode data
+        """
+        if barcodes is None:
+            barcodes = deldata.counted_barcode_columns()
+        reduced_data = self.reduce(min_score)
+        max_score = reduced_data.max_score()
+        max_point_size = 12
+        sizes = reduced_data.data[reduced_data.data_column()].apply(
+            lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+        if len(barcodes) >= 3:
+            _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+        elif len(barcodes) == 2:
+            _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
+        else:
+            raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
 
-def graph_3d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None) -> None:
-    """
-    Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
-    only works for 3 barcode data
-    """
-    if not type(deldata) == DelDataSample:
-        raise Exception(
-            "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
-    if barcodes is None:
-        barcodes = deldata.counted_barcode_columns()
-    if not len(barcodes) >= 3:
-        raise Exception("At least 3 counted barcoded needed for a 3d graph")
-    reduced_data = deldata.reduce(min_score)
-    max_score = reduced_data.max_score()
-    max_point_size = 12
-    sizes = reduced_data.data[reduced_data.data_column()].apply(
-        lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    fig = go.Figure(data=[go.Scatter3d(
-        x=reduced_data.data[barcodes[0]],
-        y=reduced_data.data[barcodes[1]],
-        z=reduced_data.data[barcodes[2]],
-        mode='markers',
-        hovertemplate="%{text}",
-        marker=dict(
-            size=sizes,
-            color=sizes,
-            colorscale='YlOrRd',
-            opacity=0.8,
-            showscale=True,
-            cmax=max(sizes),
-            cmin=min([0, min(sizes)])
-        ),
-        text=[f"<b>{barcodes[0]}<b>: {x}<br><b>{barcodes[1]}<b>: {y}<br><b>{barcodes[2]}<b>: {z}<br><b>{reduced_data.data_column()}<b>: {round(score, 3)}" for x, y, z, score in
-              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
-    )])
-    # Remove tick labels
-    fig.update_layout(
-        scene=dict(
-            xaxis=dict(showticklabels=False, title_text=barcodes[0]),
-            yaxis=dict(showticklabels=False, title_text=barcodes[1]),
-            zaxis=dict(showticklabels=False, title_text=barcodes[2]),
+    def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+        """
+        Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+        y-axis the single building block when there are 3 barcodes. 
+        """
+        ab = [f"{a},{b}" for a, b in zip(reduced_data.data[barcodes[0]],
+                                         reduced_data.data[barcodes[1]])]
+        bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
+                                         reduced_data.data[barcodes[2]])]
+        fig = make_subplots(rows=1, cols=2)
+        fig.append_trace(go.Scatter(
+            x=ab,
+            y=reduced_data.data[barcodes[2]],
+            mode='markers',
+            hovertemplate="%{text}",
+            marker=dict(
+                size=sizes,
+                color=sizes,
+                colorscale='YlOrRd',
+                showscale=True,
+                cmax=max(sizes),
+                cmin=min([0, min(sizes)])
+            ),
+            text=[f"<b>{barcodes[0]}, {barcodes[1]}:<b> {x}<br><b>{barcodes[2]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+                  zip(ab, reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
+
+        ), row=1, col=1)
+        fig["layout"]["xaxis"]["title"] = f"{barcodes[0]} and {barcodes[1]}"
+        fig["layout"]["xaxis"]["showticklabels"] = False
+        fig["layout"]["yaxis"]["title"] = barcodes[2]
+        fig["layout"]["yaxis"]["showticklabels"] = False
+        fig.append_trace(go.Scatter(
+            x=bc,
+            y=reduced_data.data[barcodes[0]],
+            mode='markers',
+            hovertemplate="%{text}",
+            marker=dict(
+                size=sizes,
+                color=sizes,
+                colorscale='YlOrRd',
+                showscale=True,
+                cmax=max(sizes),
+                cmin=min([0, min(sizes)])
+            ),
+            text=[f"<b>{barcodes[1]}, {barcodes[2]}:<b> {x}<br><b>{barcodes[0]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+                  zip(bc, reduced_data.data[barcodes[0]], reduced_data.data[reduced_data.data_column()])]
+
+        ), row=1, col=2)
+        fig["layout"]["xaxis2"]["title"] = f"{barcodes[1]} and {barcodes[2]}"
+        fig["layout"]["xaxis2"]["showticklabels"] = False
+        fig["layout"]["yaxis2"]["title"] = barcodes[0]
+        fig["layout"]["yaxis2"]["showticklabels"] = False
+        file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+        fig.write_html(os.path.join(out_dir, file_name))
+
+    def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+        """
+        Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
+        y-axis the single building block when there are 2 barcodes. 
+        """
+        fig = go.Figure(data=go.Scatter(
+            x=reduced_data.data[barcodes[0]],
+            y=reduced_data.data[barcodes[1]],
+            mode='markers',
+            hovertemplate="%{text}",
+            marker=dict(
+                size=sizes,
+                color=sizes,
+                colorscale='YlOrRd',
+                showscale=True,
+                cmax=max(sizes),
+                cmin=min([0, min(sizes)])
+            ),
+            text=[f"<b>{barcodes[0]}:<b> {x}<br><b>{barcodes[1]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
+                  zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[reduced_data.data_column()])]
+
+        ))
+        fig.update_layout(
+            xaxis_title=barcodes[0],
+            yaxis_title=barcodes[1])
+        fig["layout"]["xaxis"]["showticklabels"] = False
+        fig["layout"]["yaxis"]["showticklabels"] = False
+        file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+        fig.write_html(os.path.join(out_dir, file_name))
+
+    def graph_3d(self, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None) -> None:
+        """
+        Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
+        only works for 3 barcode data
+        """
+        if barcodes is None:
+            barcodes = deldata.counted_barcode_columns()
+        if not len(barcodes) >= 3:
+            raise Exception("At least 3 counted barcoded needed for a 3d graph")
+        reduced_data = self.reduce(min_score)
+        max_score = reduced_data.max_score()
+        max_point_size = 12
+        sizes = reduced_data.data[reduced_data.data_column()].apply(
+            lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+        fig = go.Figure(data=[go.Scatter3d(
+            x=reduced_data.data[barcodes[0]],
+            y=reduced_data.data[barcodes[1]],
+            z=reduced_data.data[barcodes[2]],
+            mode='markers',
+            hovertemplate="%{text}",
+            marker=dict(
+                size=sizes,
+                color=sizes,
+                colorscale='YlOrRd',
+                opacity=0.8,
+                showscale=True,
+                cmax=max(sizes),
+                cmin=min([0, min(sizes)])
+            ),
+            text=[f"<b>{barcodes[0]}<b>: {x}<br><b>{barcodes[1]}<b>: {y}<br><b>{barcodes[2]}<b>: {z}<br><b>{reduced_data.data_column()}<b>: {round(score, 3)}" for x, y, z, score in
+                  zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
+        )])
+        # Remove tick labels
+        fig.update_layout(
+            scene=dict(
+                xaxis=dict(showticklabels=False, title_text=barcodes[0]),
+                yaxis=dict(showticklabels=False, title_text=barcodes[1]),
+                zaxis=dict(showticklabels=False, title_text=barcodes[2]),
+            )
         )
-    )
-    file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
-    fig.write_html(os.path.join(out_dir, file_name))
-
-
-def graph_2d(deldata, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None):
-    """
-    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
-    y-axis the single building block.  Currently only works for 3 barcode data
-    """
-    if not type(deldata) == DelDataSample:
-        raise Exception(
-            "Only sample data can be graphed.  Try merged_data.sample_data(<sample_name>)")
-    if barcodes is None:
-        barcodes = deldata.counted_barcode_columns()
-    reduced_data = deldata.reduce(min_score)
-    max_score = reduced_data.max_score()
-    max_point_size = 12
-    sizes = reduced_data.data[reduced_data.data_column()].apply(
-        lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
-    if len(barcodes) >= 3:
-        _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
-    elif len(barcodes) == 2:
-        _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
-    else:
-        raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
-
-
-def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
-    """
-    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
-    y-axis the single building block when there are 3 barcodes. 
-    """
-    ab = [f"{a},{b}" for a, b in zip(reduced_data.data[barcodes[0]],
-                                     reduced_data.data[barcodes[1]])]
-    bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
-                                     reduced_data.data[barcodes[2]])]
-    fig = make_subplots(rows=1, cols=2)
-    fig.append_trace(go.Scatter(
-        x=ab,
-        y=reduced_data.data[barcodes[2]],
-        mode='markers',
-        hovertemplate="%{text}",
-        marker=dict(
-            size=sizes,
-            color=sizes,
-            colorscale='YlOrRd',
-            showscale=True,
-            cmax=max(sizes),
-            cmin=min([0, min(sizes)])
-        ),
-        text=[f"<b>{barcodes[0]}, {barcodes[1]}:<b> {x}<br><b>{barcodes[2]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
-              zip(ab, reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
-
-    ), row=1, col=1)
-    fig["layout"]["xaxis"]["title"] = f"{barcodes[0]} and {barcodes[1]}"
-    fig["layout"]["xaxis"]["showticklabels"] = False
-    fig["layout"]["yaxis"]["title"] = barcodes[2]
-    fig["layout"]["yaxis"]["showticklabels"] = False
-    fig.append_trace(go.Scatter(
-        x=bc,
-        y=reduced_data.data[barcodes[0]],
-        mode='markers',
-        hovertemplate="%{text}",
-        marker=dict(
-            size=sizes,
-            color=sizes,
-            colorscale='YlOrRd',
-            showscale=True,
-            cmax=max(sizes),
-            cmin=min([0, min(sizes)])
-        ),
-        text=[f"<b>{barcodes[1]}, {barcodes[2]}:<b> {x}<br><b>{barcodes[0]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
-              zip(bc, reduced_data.data[barcodes[0]], reduced_data.data[reduced_data.data_column()])]
-
-    ), row=1, col=2)
-    fig["layout"]["xaxis2"]["title"] = f"{barcodes[1]} and {barcodes[2]}"
-    fig["layout"]["xaxis2"]["showticklabels"] = False
-    fig["layout"]["yaxis2"]["title"] = barcodes[0]
-    fig["layout"]["yaxis2"]["showticklabels"] = False
-    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
-    fig.write_html(os.path.join(out_dir, file_name))
-
-
-def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
-    """
-    Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
-    y-axis the single building block when there are 2 barcodes. 
-    """
-    fig = go.Figure(data=go.Scatter(
-        x=reduced_data.data[barcodes[0]],
-        y=reduced_data.data[barcodes[1]],
-        mode='markers',
-        hovertemplate="%{text}",
-        marker=dict(
-            size=sizes,
-            color=sizes,
-            colorscale='YlOrRd',
-            showscale=True,
-            cmax=max(sizes),
-            cmin=min([0, min(sizes)])
-        ),
-        text=[f"<b>{barcodes[0]}:<b> {x}<br><b>{barcodes[1]}:<b> {y}<br>{reduced_data.data_column()}: {round(score, 3)}" for x, y, score in
-              zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[reduced_data.data_column()])]
-
-    ))
-    fig.update_layout(
-        xaxis_title=barcodes[0],
-        yaxis_title=barcodes[1])
-    fig["layout"]["xaxis"]["showticklabels"] = False
-    fig["layout"]["yaxis"]["showticklabels"] = False
-    file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
-    fig.write_html(os.path.join(out_dir, file_name))
-
-
-def comparison_graph(deldatamerged, x_sample: str, y_sample: str, out_dir, min_score=0):
-    if not type(deldatamerged) == DelDataMerged:
-        raise Exception("Comparison graph only works for merged data")
-    reduced_data = deldatamerged.select_samples([x_sample, y_sample]).reduce(min_score)
-    max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
-    colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
-    fig = go.Figure(data=go.Scatter(
-        x=reduced_data.data[x_sample].round(3),
-        y=reduced_data.data[y_sample].round(3),
-        mode='markers',
-        marker=dict(color=list(
-            map(lambda index: colors[index], reduced_data.number_barcodes()))),
-        hovertemplate="%{text}",
-        text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
-              zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
-                  reduced_data.data.Barcode_3)]
-    ))
-    fig.add_shape(type='line',
-                  x0=0,
-                  y0=0,
-                  x1=max_value,
-                  y1=max_value,
-                  line=dict(color='Red'))
-    fig.update_layout(
-        xaxis_title=f"{x_sample} {reduced_data.data_type}",
-        yaxis_title=f"{y_sample} {reduced_data.data_type}")
-    file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{deldatamerged.data_descriptor()}.2d.html"
-    fig.write_html(os.path.join(out_dir, file_name))
+        file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
+        fig.write_html(os.path.join(out_dir, file_name))
 
 
 def read_merged(file_path: str):
@@ -612,17 +603,14 @@ def _test():
     print("zscore")
     # data_transformed = data_merge.zscore()
     data_transformed = data_merge.binomial_zscore(len(data_merge.data.index))
-    breakpoint()
-    print("quantile_normalize")
-    data_transformed.quantile_normalize(inplace=True)
     print("Subtracting background")
     data_transformed.subtract_background("test_1", inplace=True)
     print("Graphing")
-    comparison_graph(data_transformed, "test_2", "test_3", "../../test_del/", 4)
+    data_transformed.comparison_graph("test_2", "test_3", "../../test_del/", 4)
     sample_2 = data_transformed.sample_data("test_2")
-    graph_2d(sample_2, "../../test_del/", 4)
-    graph_2d(sample_2, "../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
-    graph_3d(sample_2, "../../test_del/", 4)
+    sample_2.graph_2d("../../test_del/", 4)
+    sample_2.graph_2d("../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
+    sample_2.graph_3d("../../test_del/", 4)
 
 
 def main():
