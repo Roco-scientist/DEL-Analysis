@@ -93,15 +93,15 @@ sample_data_zscore.graph_2d("./", 4)
 
 The actual graphs will be interactive HTML graphs with hover data etc. <br><br>
 
-From delanalysis.comparison_graph()<br>
+From comparison_graph()<br>
 
 ![ "delanalysis.comparison_graph()" ](./comparison_graph.png)<br>
 
-From delanalysis.graph_2d()<br>
+From graph_2d()<br>
 
 ![ "delanalysis.graph_2d()" ](./2d_graph.png)<br>
 
-From delanalysis.graph_3d()<br>
+From graph_3d()<br>
 
 ![ "delanalysis.graph_3d()" ](./3d_graph.png)<br>
 
