@@ -66,7 +66,7 @@ test_2_data_transformed.graph_3d("./", 4)
 test_2_data_transformed.graph_2d("./", 4)
 
 # Can all be done in one line
-delanalysis.read_merged("test_counts.all.csv").binomial_zscore().subtract_background("test_1").sample_data("test_2").graph_3d("./", 4).graph_2d("./", 4)
+delanalysis.read_merged("test_counts.all.csv").binomial_zscore().subtract_background("test_1").sample_data("test_2").graph_3d("./", 4)
 ```
 
 ### Working with sample data output
