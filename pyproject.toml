@@ -2,8 +2,12 @@
 requires = [
     "setuptools>=42",
     "wheel",
-    "pandas>=1",
-    "plotly>=5",
-    "scipy>=1.7"
 ]
 build-backend = "setuptools.build_meta"
+
+dependencies = [
+    "pandas==1.2.5",
+    "plotly==5.3.0",
+    "scipy==1.6.0"
+]
+
