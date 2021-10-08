@@ -25,8 +25,7 @@ cd DEL-Analysis
 ```
 conda create -n del python=3.9
 conda activate del
-pip install -r requirements.txt
-pip install .
+pip install --use-feature=in-tree-build .
 ```
 
 ## Files Needed
