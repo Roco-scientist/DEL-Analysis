@@ -107,6 +107,23 @@ From graph_3d()<br>
 
 ## Methods
 
+### delanalysis methods to import data
+
+<table>
+<tr>
+<th>Method</th> <th>Description</th>
+</tr>
+<tr>
+<td>read_merged(file_path)</td> <td>Creates a DelDataMerged object which can use the methods below</td>
+</tr>
+<tr>
+<td>read_sample(file_path)</td> <td>Creates a DelDataSample object which can use the methods below</td>
+</tr>
+<tr>
+<td></td> <td></td>
+</tr>
+</table>
+
 ### Common to merged data and sample data
 
 Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
@@ -135,6 +152,9 @@ Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
 </tr>
 <tr>
 <td>binomial_zscore(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation</td>
+</tr>
+<tr>
+<td>binomial_zscore_sample_normalized(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation and normalizes by sqrt(n). See: <a href=https://pubs.acs.org/doi/10.1021/acscombsci.8b00116>Quantitative Comparison of Enrichment...</a></td>
 </tr>
 <tr>
 <td>enrichment(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
