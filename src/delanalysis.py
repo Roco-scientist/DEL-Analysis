@@ -22,6 +22,9 @@ class DelData:
         self.data = data
         self.data_type = data_type
         self.sample_name = sample_name
+        self.single_indexes = None
+        self.double_indexes = None
+        self.file_type = "Full"
 
     def __repr__(self):
         """
@@ -92,7 +95,7 @@ class DelData:
         new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         return new_df
 
-    def _binomial_zscore_sample_normalized(self, del_library_size: int):
+    def _binomial_zscore_sample_normalized(self, del_library_size: int) -> np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
@@ -126,6 +129,36 @@ class DelData:
         enrichment_df.columns = self.counted_barcode_columns() + self.data_columns()
         enrichment_df.rename({"Count": "enrichment"}, axis=1, inplace=True)
         return enrichment_df
+
+    def get_single_indexes(self) -> None:
+        self.single_indexes = []
+        for column_name in self.counted_barcode_columns():
+            self.single_indexes.append(self.data[notna(self.data[column_name])].index)
+
+    def get_double_indexes(self) -> None:
+        counted_barcode_columns = self.counted_barcode_columns()
+        self.double_indexes = []
+        for first_barcode_index in range(0, len(counted_barcode_columns) - 1):
+            for add_barcode_amt in range(1, len(counted_barcode_columns) - first_barcode_index):
+                self.double_indexes.append(self.data[(notna(self.data[counted_barcode_columns[first_barcode_index]]))
+                                                     & (notna(self.data[counted_barcode_columns[first_barcode_index + add_barcode_amt]]))])
+
+    def single(self, number_barcodes: List[int] = None) -> None:
+        self.get_single_indexes()
+        self.file_type = "Single"
+        if number_barcodes is None:
+            self._infer_barcode_numbers()
+
+    def double(self, number_barcodes: List[int] = None) -> None:
+        self.get_double_indexes()
+        self.file_type = "Double"
+        if number_barcodes is None:
+            self._infer_barcode_numbers()
+
+    def _infer_barcode_numbers(self):
+        self.barcode_numbers = []
+        for column_name in self.counted_barcode_columns():
+            self.barcode_numbers.append(len(set(self.data[column_name])))
 
     def total_counts(self):
         return self.data[self.data_columns()].sum(axis=0).values
@@ -635,6 +668,12 @@ def _test():
     "Setup for testing"
 
     data = read_sample("../../test_del/test_counts.csv", "test")
+    full = read_merged("../../test_del/test.all.csv")
+    full_zscore = full.binomial_zscore_sample_normalized(len(full.data.index))
+    double = read_merged("../../test_del/test.all.Double.csv")
+    double_zscore = double.binomial_zscore_sample_normalized(len(full.data.index)/2)
+    single = read_merged("../../test_del/test.all.Single.csv")
+    single_zscore = single.binomial_zscore_sample_normalized(len(full.data.index)/3)
     data_merge = read_merged("../../test_del/test_counts.all.csv")
     print("Transforming data")
     print("zscore")
