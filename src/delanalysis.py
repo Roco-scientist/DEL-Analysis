@@ -18,13 +18,12 @@ class DelData:
     An object for working with data output from DEL-Decode
     """
 
-    def __init__(self, data, data_type="Count", sample_name=None):
+    def __init__(self, data: DataFrame, data_type="Count", sample_name=None):
         self.data = data
         self.data_type = data_type
         self.sample_name = sample_name
-        self.single_indexes = None
-        self.double_indexes = None
-        self.file_type = "Full"
+        # varuable setup for list of indexes to normalize together.  Needed for single and double synthon enrichment
+        self.indexes: List[List[int]] = [data.index.tolist()]
 
     def __repr__(self):
         """
@@ -90,7 +89,6 @@ class DelData:
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
-        breakpoint()
         expected_probability = 1/del_library_size  # get the probability as 1/library size
         total_counts = self.total_counts()
         observed_probability = counts / total_counts
@@ -109,17 +107,19 @@ class DelData:
         return enrichment_score
 
     def get_single_indexes(self) -> None:
-        self.single_indexes = []
+        self.indexes = []
         for column_name in self.counted_barcode_columns():
-            self.single_indexes.append(self.data[notna(self.data[column_name])].index)
+            self.indexes.append(self.data[notna(self.data[column_name])].index.tolist())
 
     def get_double_indexes(self) -> None:
         counted_barcode_columns = self.counted_barcode_columns()
-        self.double_indexes = []
+        self.indexes = []
         for first_barcode_index in range(0, len(counted_barcode_columns) - 1):
             for add_barcode_amt in range(1, len(counted_barcode_columns) - first_barcode_index):
-                self.double_indexes.append(self.data[(notna(self.data[counted_barcode_columns[first_barcode_index]]))
-                                                     & (notna(self.data[counted_barcode_columns[first_barcode_index + add_barcode_amt]]))])
+                second_barcode_index = first_barcode_index + add_barcode_amt
+                first_select = notna(self.data[counted_barcode_columns[first_barcode_index]])
+                second_select = notna(self.data[counted_barcode_columns[second_barcode_index]])
+                self.indexes.append(self.data[(first_select) & (second_select)].index.tolist())
 
     def single(self, number_barcodes: List[int] = None) -> None:
         self.get_single_indexes()
@@ -324,7 +324,9 @@ class DelDataMerged(DelData):
 
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
-        zscore_df[self.data_columns()] = self._zscore(zscore_df[self.data_columns()].values)
+        for sel_indexes in self.indexes:
+            zscore_df.loc[sel_indexes, self.data_columns()] = self._zscore(
+                zscore_df.loc[sel_indexes, self.data_columns()].values)
         if inplace:
             self.data_type = "zscore"
             self.data = zscore_df
@@ -334,8 +336,9 @@ class DelDataMerged(DelData):
 
     def binomial_zscore(self, del_library_size: int, inplace=False):
         binomial_zscore_df = self.data.copy()
-        binomial_zscore_df[self.data_columns()] = self._binomial_zscore(
-            binomial_zscore_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "binomial_zscore"
             self.data = binomial_zscore_df
@@ -345,8 +348,9 @@ class DelDataMerged(DelData):
 
     def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
         binomial_zscore_df = self.data.copy()
-        binomial_zscore_df[self.data_columns()] = self._binomial_zscore_sample_normalized(
-            binomial_zscore_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore_sample_normalized(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "binomial_zscore_sample_normalized"
             self.data = binomial_zscore_df
@@ -360,8 +364,9 @@ class DelDataMerged(DelData):
         count * library diversity / total sample counts
         """
         enrichment_df = self.data.copy()
-        enrichment_df[self.data_columns()] = self._enrichment(
-            enrichment_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            enrichment_df.loc[sel_indexes, self.data_columns()] = self._enrichment(
+                enrichment_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "enrichment"
             self.data = enrichment_df
@@ -445,7 +450,9 @@ class DelDataSample(DelData):
 
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
-        zscore_df[self.data_columns()] = self._zscore(zscore_df[self.data_columns()].values)
+        for sel_indexes in self.indexes:
+            zscore_df.loc[sel_indexes, self.data_columns()] =\
+                self._zscore(zscore_df.loc[sel_indexes, self.data_columns()].values)
         zscore_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "zscore"
@@ -456,8 +463,10 @@ class DelDataSample(DelData):
 
     def binomial_zscore(self, del_library_size: int, inplace=False):
         binomial_zscore_df = self.data.copy()
-        binomial_zscore_df[self.data_columns()] =\
-            self._binomial_zscore(binomial_zscore_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] =\
+                self._binomial_zscore(
+                    binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         binomial_zscore_df.rename({self.data_type:  "binomial_zscore"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "binomial_zscore"
@@ -468,8 +477,9 @@ class DelDataSample(DelData):
 
     def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
         binomial_zscore_df = self.data.copy()
-        binomial_zscore_df[self.data_columns()] = self._binomial_zscore_sample_normalized(
-            binomial_zscore_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore_sample_normalized(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         binomial_zscore_df.rename({self.data_type:  "binomial_zscore_sample_normalized"}, axis=1,
                                   inplace=True)
         if inplace:
@@ -485,8 +495,10 @@ class DelDataSample(DelData):
         count * library diversity / total sample counts
         """
         enrichment_df = self.data.copy()
-        enrichment_df[self.data_columns()] =\
-            self._enrichment(enrichment_df[self.data_columns()].values, del_library_size)
+        for sel_indexes in self.indexes:
+            enrichment_df.loc[sel_indexes, self.data_columns()] =\
+                self._enrichment(enrichment_df.loc[sel_indexes,
+                                 self.data_columns()].values, del_library_size)
         enrichment_df.rename({self.data_type: "enrichment"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "enrichment"
@@ -666,7 +678,6 @@ def read_sample(file_path: str, sample_name: str):
 
 def _test():
     "Setup for testing"
-
     data = read_sample("../../test_del/test_counts.csv", "test")
     full = read_merged("../../test_del/test.all.csv")
     sample_2 = full.sample_data("test_2")
