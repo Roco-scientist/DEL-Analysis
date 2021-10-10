@@ -18,12 +18,16 @@ class DelData:
     An object for working with data output from DEL-Decode
     """
 
-    def __init__(self, data: DataFrame, data_type="Count", sample_name=None):
+    def __init__(self, data: DataFrame, data_type="Count", sample_name=None, unique_synthons: List[int] = None):
         self.data = data
         self.data_type = data_type
         self.sample_name = sample_name
         self.barcode_info = {}  # holds a dictionary of indexes and library sizes for each barcode pairing found
         self.barcode_numbers = {}  # holds a dicionary of how many synthons per building block
+        if unique_synthons is None:
+            self._infer_barcode_numbers()
+        else:
+            self.update_barcode_numbers(unique_synthons)
 
     def __repr__(self):
         """
@@ -107,13 +111,37 @@ class DelData:
             del_library_size / total_counts
         return enrichment_score
 
-    def library_size(self, del_library_size: int):
-        self.library_sizes = [del_library_size]
-
     def _infer_barcode_numbers(self):
+        """
+        Infers the number of unique synthons per barcode that was counted by finding the number of
+        uniques in the data set assuming that at least one would be sequenced
+        """
+        print("Total synthons inferred")
         for column_name in self.counted_barcode_columns():
             unique_synthons = [synthon for synthon in set(self.data[column_name]) if notna(synthon)]
+            print(f"{column_name}: {len(unique_synthons)}")
             self.barcode_numbers[column_name] = len(unique_synthons)
+        print("If this is not correct, update with known number with update_barcode_numbers()")
+
+    def update_barcode_numbers(self, barcode_numbers: List[int]) -> None:
+        """
+        Allows user to update barcode number to fix what is inferred
+        """
+        barcode_columns = self.counted_barcode_columns()
+        if not isinstance(barcode_numbers, list):
+            raise Exception(
+                f"List of number of unique sythons required with the same length as counted barcodes, {len(barcode_columns)}")
+        if len(barcode_numbers) != len(barcode_columns):
+            raise Exception(
+                f"Length of list, {len(barcode_numbers)}, shorter than the number of counted barcodes {','.join(barcode_columns)}")
+        for barcode_num, total_barcodes in zip(barcode_columns, barcode_numbers):
+            self.barcode_numbers[barcode_num] = total_barcodes
+        self._infer_barcode_groups()
+        for barcodes_key in self.barcode_info.keys():
+            library_size = 1
+            for barcode_num in barcodes_key.split(","):
+                library_size = library_size * self.barcode_numbers[barcode_num]
+            self.barcode_info[barcodes_key]["library_size"] = library_size
 
     def _infer_barcode_groups(self):
         barcode_columns = np.array(self.counted_barcode_columns())
@@ -311,7 +339,6 @@ class DelDataMerged(DelData):
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -327,7 +354,6 @@ class DelDataMerged(DelData):
     def binomial_zscore(self, inplace=False):
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -344,7 +370,6 @@ class DelDataMerged(DelData):
     def binomial_zscore_sample_normalized(self, inplace=False):
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -365,7 +390,6 @@ class DelDataMerged(DelData):
         """
         enrichment_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -468,7 +492,6 @@ class DelDataSample(DelData):
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -485,7 +508,6 @@ class DelDataSample(DelData):
     def binomial_zscore(self, inplace=False):
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -504,7 +526,6 @@ class DelDataSample(DelData):
     def binomial_zscore_sample_normalized(self, inplace=False):
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -527,7 +548,6 @@ class DelDataSample(DelData):
         """
         enrichment_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
-            self._infer_barcode_numbers()
             self._infer_barcode_groups()
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
@@ -716,11 +736,11 @@ def _test():
     "Setup for testing"
     # data = read_sample("../../test_del/test_counts.csv", "test")
     # full.library_size(len(full.data.index))
-    print("Pulling in full")
-    full = read_merged("../../test_del/test.all.csv")
-    print("running rest")
+    print("Inporting and concatenating")
+    breakpoint()
     double = read_merged("../../test_del/test.all.Double.csv")
     single = read_merged("../../test_del/test.all.Single.csv")
+    full = read_merged("../../test_del/test.all.csv")
     full_double = full.concat(double)
     full_double_single = full_double.concat(single)
     print("Normalizing")
