@@ -171,7 +171,7 @@ Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
 <td>enrichment(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
 </tr>
 <tr>
-<td>update_barcode_numbers(barcode_numbers: List[int])</td> <td>The number of unique synthons is inferred by the total uniques found in the data.  These numbers can be updated with this function</td>
+<td>update_synthon_numbers(unique_synthons_per_barcode: List[int])</td> <td>The number of unique synthons is inferred by the total uniques found in the data.  These numbers can be updated with this function</td>
 </tr>
 </table>
 
