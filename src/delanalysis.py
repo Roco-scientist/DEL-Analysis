@@ -144,7 +144,7 @@ class DelData:
         Returns the bumber of barcodes for each row of the data
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
-        return notna(barcode_data).sum(axis=1).tolist()
+        return notna(barcode_data).sum(axis=1).values
 
     def to_csv(self, out_file: str):
         """
@@ -384,23 +384,31 @@ class DelDataMerged(DelData):
         Compares two samples on a single graph where x_sample is on the x axis with the enrichment
         or count and y_sample is on the y_axis
         """
+        for barcode_name in ("Barcode_1", "Barcode_2", "Barcode_3"):
+            if barcode_name not in self.counted_barcode_columns():
+                raise Exception(
+                    f"{barcode_name} missing.  Comparison graph currently only works with 3 barcodes")
         reduced_data = self.select_samples([x_sample, y_sample]).reduce(min_score)
         max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
-        colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
+        colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
         fig = go.Figure()
-        unique_number_barcodes = reduced_data.number_barcodes()
+        number_barcodes = reduced_data.number_barcodes()
+        unique_number_barcodes = list(set(number_barcodes))
         unique_number_barcodes.sort(reverse=True)
         for num_barcode in unique_number_barcodes:
+            reduced_data_barcode_num = reduced_data.data.iloc[np.where(
+                number_barcodes == num_barcode)[0], :]
             fig.add_trace(go.Scatter(
-                name=num_barcode,
-                x=reduced_data.data[x_sample].round(3),
-                y=reduced_data.data[y_sample].round(3),
+                name=f"{num_barcode} synthons",
+                x=reduced_data_barcode_num[x_sample].round(3),
+                y=reduced_data_barcode_num[y_sample].round(3),
                 mode='markers',
                 marker=dict(color=colors[num_barcode]),
                 hovertemplate="%{text}",
                 text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
-                      zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
-                          reduced_data.data.Barcode_3)]
+                      zip(reduced_data_barcode_num[x_sample], reduced_data_barcode_num[y_sample],
+                          reduced_data_barcode_num.Barcode_1, reduced_data_barcode_num.Barcode_2,
+                          reduced_data_barcode_num.Barcode_3)]
             ))
         fig.add_shape(type='line',
                       x0=0,
@@ -718,15 +726,15 @@ def _test():
     print("Normalizing")
     full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
     full_double_single_zscore.subtract_background("test_1", inplace=True)
+    # breakpoint()
+    # full_zscore = full.binomial_zscore_sample_normalized()
+    # double_zscore = double.binomial_zscore_sample_normalized()
+    # single_zscore = single.binomial_zscore_sample_normalized()
+    # full_double_zscore = full_zscore.concat(double_zscore)
+    # full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
+    # full_double_single_zscore_2.subtract_background("test_1", inplace=True)
+    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
     breakpoint()
-    full_zscore = full.binomial_zscore_sample_normalized()
-    double_zscore = double.binomial_zscore_sample_normalized()
-    single_zscore = single.binomial_zscore_sample_normalized()
-    full_double_zscore = full_zscore.concat(double_zscore)
-    full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
-    full_double_single_zscore_2.subtract_background("test_1", inplace=True)
-    breakpoint()
-    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/")
     print("Graphing")
     sample_2 = full_double_single_zscore.sample_data("test_2")
     sample_2.graph_2d("../../test_del/", 4)
