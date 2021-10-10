@@ -76,7 +76,7 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = self.total_counts()
+        total_counts = np.sum(counts, axis=0)
         observed_probability = counts / total_counts
         denominator = math.sqrt(expected_probability * (1 - expected_probability))
         return np.sqrt(total_counts) * (observed_probability - expected_probability) / denominator
@@ -90,7 +90,7 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = self.total_counts()
+        total_counts = np.sum(counts, axis=0)
         observed_probability = counts / total_counts
         denominator = math.sqrt(expected_probability * (1 - expected_probability))
         return (observed_probability - expected_probability) / denominator
@@ -102,8 +102,9 @@ class DelData:
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
+        total_counts = np.sum(counts, axis=0)
         enrichment_score = counts * \
-            del_library_size / self.total_counts()
+            del_library_size / total_counts
         return enrichment_score
 
     def library_size(self, del_library_size: int):
@@ -111,7 +112,8 @@ class DelData:
 
     def _infer_barcode_numbers(self):
         for column_name in self.counted_barcode_columns():
-            self.barcode_numbers[column_name] = len(set(self.data[column_name]))
+            unique_synthons = [synthon for synthon in set(self.data[column_name]) if notna(synthon)]
+            self.barcode_numbers[column_name] = len(unique_synthons)
 
     def _infer_barcode_groups(self):
         barcode_columns = np.array(self.counted_barcode_columns())
@@ -124,9 +126,6 @@ class DelData:
             for barcode_num in barcode_key.split(","):
                 library_size = library_size * self.barcode_numbers[barcode_num]
             self.barcode_info[barcode_key]["library_size"] = library_size
-
-    def total_counts(self):
-        return self.data[self.data_columns()].sum(axis=0).values
 
     def data_columns(self):
         """
@@ -728,15 +727,8 @@ def _test():
     full_double_single_zscore_2.subtract_background("test_1", inplace=True)
     breakpoint()
     full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/")
-    print("Transforming data")
-    print("zscore")
-    # data_transformed = data_merge.zscore()
-    data_transformed = data_merge.binomial_zscore(len(data_merge.data.index))
-    print("Subtracting background")
-    data_transformed.subtract_background("test_1", inplace=True)
     print("Graphing")
-    data_transformed.comparison_graph("test_2", "test_3", "../../test_del/", 4)
-    sample_2 = data_transformed.sample_data("test_2")
+    sample_2 = full_double_single_zscore.sample_data("test_2")
     sample_2.graph_2d("../../test_del/", 4)
     sample_2.graph_2d("../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
     sample_2.graph_3d("../../test_del/", 4)
