@@ -18,10 +18,12 @@ class DelData:
     An object for working with data output from DEL-Decode
     """
 
-    def __init__(self, data, data_type="Count", sample_name=None):
+    def __init__(self, data: DataFrame, data_type="Count", sample_name=None):
         self.data = data
         self.data_type = data_type
         self.sample_name = sample_name
+        self.barcode_info = {}  # holds a dictionary of indexes and library sizes for each barcode pairing found
+        self.barcode_numbers = {}  # holds a dicionary of how many synthons per building block
 
     def __repr__(self):
         """
@@ -57,23 +59,15 @@ class DelData:
 
         return buf.getvalue()
 
-    def _zscore(self):
+    def _zscore(self, counts: np.ndarray) -> np.ndarray:
         if self.data_type == "zscore":
             raise Exception("Data is already zscored")
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         # Get the zscore of the count columns
-        zscore_values = zscore(self.data.loc[:, self.data_columns()].values)
-        # Create a dataframe to add the blocks back
-        zscore_df = DataFrame(data=zscore_values, columns=self.data_columns())
-        zscore_df_final = concat([self.data.loc[:, self.counted_barcode_columns()], zscore_df],
-                                 ignore_index=True, sort=False, axis=1)
-        columns = self.counted_barcode_columns() + self.data_columns()
-        zscore_df_final.columns = columns
-        zscore_df_final.rename({self.data_type: "zscore"}, axis=1, inplace=True)
-        return zscore_df_final
+        return zscore(counts)
 
-    def _binomial_zscore(self, del_library_size: int):
+    def _binomial_zscore(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
@@ -82,17 +76,12 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = self.total_counts()
-        observed_probability = self.data[self.data_columns()].values / total_counts
+        total_counts = np.sum(counts, axis=0)
+        observed_probability = counts / total_counts
         denominator = math.sqrt(expected_probability * (1 - expected_probability))
-        zscore = np.sqrt(total_counts) * (observed_probability - expected_probability) / denominator
-        new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
-                        ignore_index=True, sort=False, axis=1)
-        new_df.columns = self.counted_barcode_columns() + self.data_columns()
-        new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
-        return new_df
+        return np.sqrt(total_counts) * (observed_probability - expected_probability) / denominator
 
-    def _binomial_zscore_sample_normalized(self, del_library_size: int):
+    def _binomial_zscore_sample_normalized(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
@@ -101,34 +90,42 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = self.total_counts()
-        observed_probability = self.data[self.data_columns()].values / total_counts
+        total_counts = np.sum(counts, axis=0)
+        observed_probability = counts / total_counts
         denominator = math.sqrt(expected_probability * (1 - expected_probability))
-        zscore = (observed_probability - expected_probability) / denominator
-        new_df = concat([self.data[self.counted_barcode_columns()], DataFrame(data=zscore)],
-                        ignore_index=True, sort=False, axis=1)
-        new_df.columns = self.counted_barcode_columns() + self.data_columns()
-        new_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
-        return new_df
+        return (observed_probability - expected_probability) / denominator
 
-    def _enrichment(self, del_library_size: int, inplace=False):
+    def _enrichment(self, counts: np.ndarray, del_library_size: int, inplace=False) -> np.ndarray:
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
-        enrichment_score = self.data[self.data_columns()].values * \
-            del_library_size / self.total_counts()
-        enrichment_df = concat([self.data[self.counted_barcode_columns()],
-                                DataFrame(data=enrichment_score)],
-                               ignore_index=True, sort=False, axis=1)
-        enrichment_df.columns = self.counted_barcode_columns() + self.data_columns()
-        enrichment_df.rename({"Count": "enrichment"}, axis=1, inplace=True)
-        return enrichment_df
+        total_counts = np.sum(counts, axis=0)
+        enrichment_score = counts * \
+            del_library_size / total_counts
+        return enrichment_score
 
-    def total_counts(self):
-        return self.data[self.data_columns()].sum(axis=0).values
+    def library_size(self, del_library_size: int):
+        self.library_sizes = [del_library_size]
+
+    def _infer_barcode_numbers(self):
+        for column_name in self.counted_barcode_columns():
+            unique_synthons = [synthon for synthon in set(self.data[column_name]) if notna(synthon)]
+            self.barcode_numbers[column_name] = len(unique_synthons)
+
+    def _infer_barcode_groups(self):
+        barcode_columns = np.array(self.counted_barcode_columns())
+        barcode_included = notna(self.data[barcode_columns]).values
+        barcode_keys = np.apply_along_axis(lambda row: ",".join(
+            barcode_columns[row]), 1, barcode_included)
+        for barcode_key in set(barcode_keys):
+            self.barcode_info[barcode_key] = {"indexes": np.where(barcode_keys == barcode_key)[0]}
+            library_size = 1
+            for barcode_num in barcode_key.split(","):
+                library_size = library_size * self.barcode_numbers[barcode_num]
+            self.barcode_info[barcode_key]["library_size"] = library_size
 
     def data_columns(self):
         """
@@ -147,7 +144,7 @@ class DelData:
         Returns the bumber of barcodes for each row of the data
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
-        return notna(barcode_data).sum(axis=1).tolist()
+        return notna(barcode_data).sum(axis=1).values
 
     def to_csv(self, out_file: str):
         """
@@ -253,6 +250,9 @@ class DelDataMerged(DelData):
         if any([col not in deldata.data.columns for col in self.data.columns])\
                 or any([col not in self.data.columns for col in deldata.data.columns]):
             raise Exception("Data column mismatch")
+        if self.data_type != deldata.data_type:
+            raise Exception(
+                "Data types do not match.  Trying to concat {deldata.data_type} into {self.data_type}")
         concat_data = concat([self.data, deldata.data], ignore_index=True, sort=False)
         if inplace:
             self.data = concat_data
@@ -309,7 +309,14 @@ class DelDataMerged(DelData):
             return DelDataMerged(sample_data, self.data_type)
 
     def zscore(self, inplace=False):
-        zscore_df = self._zscore()
+        zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            zscore_df.loc[sel_indexes, self.data_columns()] = self._zscore(
+                zscore_df.loc[sel_indexes, self.data_columns()].values)
         if inplace:
             self.data_type = "zscore"
             self.data = zscore_df
@@ -317,8 +324,16 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(zscore_df, data_type="zscore")
 
-    def binomial_zscore(self, del_library_size: int, inplace=False):
-        binomial_zscore_df = self._binomial_zscore(del_library_size)
+    def binomial_zscore(self, inplace=False):
+        binomial_zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "binomial_zscore"
             self.data = binomial_zscore_df
@@ -326,8 +341,16 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore")
 
-    def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
-        binomial_zscore_df = self._binomial_zscore_sample_normalized(del_library_size)
+    def binomial_zscore_sample_normalized(self, inplace=False):
+        binomial_zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore_sample_normalized(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "binomial_zscore_sample_normalized"
             self.data = binomial_zscore_df
@@ -335,12 +358,20 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore_sample_normalized")
 
-    def enrichment(self, del_library_size: int, inplace=False):
+    def enrichment(self, inplace=False):
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
         """
-        enrichment_df = self._enrichment(del_library_size)
+        enrichment_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            enrichment_df.loc[sel_indexes, self.data_columns()] = self._enrichment(
+                enrichment_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
         if inplace:
             self.data_type = "enrichment"
             self.data = enrichment_df
@@ -353,20 +384,32 @@ class DelDataMerged(DelData):
         Compares two samples on a single graph where x_sample is on the x axis with the enrichment
         or count and y_sample is on the y_axis
         """
+        for barcode_name in ("Barcode_1", "Barcode_2", "Barcode_3"):
+            if barcode_name not in self.counted_barcode_columns():
+                raise Exception(
+                    f"{barcode_name} missing.  Comparison graph currently only works with 3 barcodes")
         reduced_data = self.select_samples([x_sample, y_sample]).reduce(min_score)
         max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
-        colors = [None, "yellow", "green", "blue", "black", "orange", "red"]
-        fig = go.Figure(data=go.Scatter(
-            x=reduced_data.data[x_sample].round(3),
-            y=reduced_data.data[y_sample].round(3),
-            mode='markers',
-            marker=dict(color=list(
-                map(lambda index: colors[index], reduced_data.number_barcodes()))),
-            hovertemplate="%{text}",
-            text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
-                  zip(reduced_data.data[x_sample], reduced_data.data[y_sample], reduced_data.data.Barcode_1, reduced_data.data.Barcode_2,
-                      reduced_data.data.Barcode_3)]
-        ))
+        colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
+        fig = go.Figure()
+        number_barcodes = reduced_data.number_barcodes()
+        unique_number_barcodes = list(set(number_barcodes))
+        unique_number_barcodes.sort(reverse=True)
+        for num_barcode in unique_number_barcodes:
+            reduced_data_barcode_num = reduced_data.data.iloc[np.where(
+                number_barcodes == num_barcode)[0], :]
+            fig.add_trace(go.Scatter(
+                name=f"{num_barcode} synthons",
+                x=reduced_data_barcode_num[x_sample].round(3),
+                y=reduced_data_barcode_num[y_sample].round(3),
+                mode='markers',
+                marker=dict(color=colors[num_barcode]),
+                hovertemplate="%{text}",
+                text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
+                      zip(reduced_data_barcode_num[x_sample], reduced_data_barcode_num[y_sample],
+                          reduced_data_barcode_num.Barcode_1, reduced_data_barcode_num.Barcode_2,
+                          reduced_data_barcode_num.Barcode_3)]
+            ))
         fig.add_shape(type='line',
                       x0=0,
                       y0=0,
@@ -376,7 +419,7 @@ class DelDataMerged(DelData):
         fig.update_layout(
             xaxis_title=f"{x_sample} {reduced_data.data_type}",
             yaxis_title=f"{y_sample} {reduced_data.data_type}")
-        file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{deldatamerged.data_descriptor()}.2d.html"
+        file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{self.data_descriptor()}.2d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -423,7 +466,15 @@ class DelDataSample(DelData):
         return self.data_type
 
     def zscore(self, inplace=False):
-        zscore_df = self._zscore()
+        zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            zscore_df.loc[sel_indexes, self.data_columns()] =\
+                self._zscore(zscore_df.loc[sel_indexes, self.data_columns()].values)
+        zscore_df.rename({self.data_type: "zscore"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "zscore"
             self.data = zscore_df
@@ -431,8 +482,18 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(zscore_df, "zscore", self.sample_name)
 
-    def binomial_zscore(self, del_library_size: int, inplace=False):
-        binomial_zscore_df = self._binomial_zscore(del_library_size)
+    def binomial_zscore(self, inplace=False):
+        binomial_zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] =\
+                self._binomial_zscore(
+                    binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
+        binomial_zscore_df.rename({self.data_type:  "binomial_zscore"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "binomial_zscore"
             self.data = binomial_zscore_df
@@ -440,8 +501,18 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(binomial_zscore_df, "binomial_zscore", self.sample_name)
 
-    def binomial_zscore_sample_normalized(self, del_library_size: int, inplace=False):
-        binomial_zscore_df = self._binomial_zscore_sample_normalized(del_library_size)
+    def binomial_zscore_sample_normalized(self, inplace=False):
+        binomial_zscore_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            binomial_zscore_df.loc[sel_indexes, self.data_columns()] = self._binomial_zscore_sample_normalized(
+                binomial_zscore_df.loc[sel_indexes, self.data_columns()].values, del_library_size)
+        binomial_zscore_df.rename({self.data_type:  "binomial_zscore_sample_normalized"}, axis=1,
+                                  inplace=True)
         if inplace:
             self.data_type = "binomial_zscore_sample_normalized"
             self.data = binomial_zscore_df
@@ -449,12 +520,22 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(binomial_zscore_df, "binomial_zscore_sample_normalized", self.sample_name)
 
-    def enrichment(self, del_library_size: int, inplace=False):
+    def enrichment(self, inplace=False):
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
         """
-        enrichment_df = self._enrichment(del_library_size)
+        enrichment_df = self.data.copy()
+        if len(self.barcode_info.keys()) == 0:
+            self._infer_barcode_numbers()
+            self._infer_barcode_groups()
+        for barcode_group in self.barcode_info.keys():
+            del_library_size = self.barcode_info[barcode_group]["library_size"]
+            sel_indexes = self.barcode_info[barcode_group]["indexes"]
+            enrichment_df.loc[sel_indexes, self.data_columns()] =\
+                self._enrichment(enrichment_df.loc[sel_indexes,
+                                 self.data_columns()].values, del_library_size)
+        enrichment_df.rename({self.data_type: "enrichment"}, axis=1, inplace=True)
         if inplace:
             self.data_type = "enrichment"
             self.data = enrichment_df
@@ -633,18 +714,29 @@ def read_sample(file_path: str, sample_name: str):
 
 def _test():
     "Setup for testing"
-
-    data = read_sample("../../test_del/test_counts.csv", "test")
-    data_merge = read_merged("../../test_del/test_counts.all.csv")
-    print("Transforming data")
-    print("zscore")
-    # data_transformed = data_merge.zscore()
-    data_transformed = data_merge.binomial_zscore(len(data_merge.data.index))
-    print("Subtracting background")
-    data_transformed.subtract_background("test_1", inplace=True)
+    # data = read_sample("../../test_del/test_counts.csv", "test")
+    # full.library_size(len(full.data.index))
+    print("Pulling in full")
+    full = read_merged("../../test_del/test.all.csv")
+    print("running rest")
+    double = read_merged("../../test_del/test.all.Double.csv")
+    single = read_merged("../../test_del/test.all.Single.csv")
+    full_double = full.concat(double)
+    full_double_single = full_double.concat(single)
+    print("Normalizing")
+    full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
+    full_double_single_zscore.subtract_background("test_1", inplace=True)
+    # breakpoint()
+    # full_zscore = full.binomial_zscore_sample_normalized()
+    # double_zscore = double.binomial_zscore_sample_normalized()
+    # single_zscore = single.binomial_zscore_sample_normalized()
+    # full_double_zscore = full_zscore.concat(double_zscore)
+    # full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
+    # full_double_single_zscore_2.subtract_background("test_1", inplace=True)
+    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
+    breakpoint()
     print("Graphing")
-    data_transformed.comparison_graph("test_2", "test_3", "../../test_del/", 4)
-    sample_2 = data_transformed.sample_data("test_2")
+    sample_2 = full_double_single_zscore.sample_data("test_2")
     sample_2.graph_2d("../../test_del/", 4)
     sample_2.graph_2d("../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
     sample_2.graph_3d("../../test_del/", 4)

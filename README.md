@@ -67,6 +67,17 @@ test_2_data_transformed.graph_2d("./", 4)
 
 # Can all be done in one line
 delanalysis.read_merged("test_counts.all.csv").binomial_zscore().subtract_background("test_1").sample_data("test_2").graph_3d("./", 4)
+
+
+# Create a comparison graph for tri, di, and mono synthons
+full = read_merged("../../test_del/test.all.csv")
+double = read_merged("../../test_del/test.all.Double.csv")
+single = read_merged("../../test_del/test.all.Single.csv")
+full_double = full.concat(double)
+full_double_single = full_double.concat(single)
+full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
+full_double_single_zscore.subtract_background("test_1", inplace=True)
+full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002
 ```
 
 ### Working with sample data output
