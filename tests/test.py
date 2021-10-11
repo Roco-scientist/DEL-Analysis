@@ -1,0 +1,40 @@
+import delanalysis
+
+
+def main():
+    # data = read_sample("../../test_del/test_counts.csv", "test")
+    # full.library_size(len(full.data.index))
+    print("Inporting and concatenating")
+    double = delanalysis.read_merged("../../test_del/test.all.Double.csv")
+    double.zscore()
+    double.binomial_zscore()
+    double.enrichment()
+    single = delanalysis.read_merged("../../test_del/test.all.Single.csv")
+    full = delanalysis.read_merged("../../test_del/test.all.csv")
+    full_double = full.concat(double)
+    full_double_single = full_double.concat(single)
+    print("Normalizing")
+    full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
+    full_double_single_zscore.subtract_background("test_1", inplace=True)
+    # breakpoint()
+    # full_zscore = full.binomial_zscore_sample_normalized()
+    # double_zscore = double.binomial_zscore_sample_normalized()
+    # single_zscore = single.binomial_zscore_sample_normalized()
+    # full_double_zscore = full_zscore.concat(double_zscore)
+    # full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
+    # full_double_single_zscore_2.subtract_background("test_1", inplace=True)
+    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
+    print("Graphing")
+    sample_2_test = double.sample_data("test_2")
+    sample_2_test.zscore()
+    sample_2_test.binomial_zscore()
+    sample_2_test.binomial_zscore_sample_normalized()
+    sample_2_test.enrichment()
+    sample_2 = full_double_single_zscore.sample_data("test_2")
+    sample_2.graph_2d("../../test_del/", 0.002)
+    sample_2.graph_2d("../../test_del/", 0.002, barcodes=["Barcode_1", "Barcode_2"])
+    sample_2.graph_3d("../../test_del/", 0.002)
+
+
+if __name__ == "__main__":
+    main()

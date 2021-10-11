@@ -19,19 +19,23 @@ class DelData:
     """
 
     def __init__(self, data: DataFrame, data_type="Count", sample_name=None, unique_synthons: List[int] = None):
-        self.data = data
-        self.data_type = data_type
-        self.sample_name = sample_name
+        self.data = data  # DataFrame of the data
+        self.data_type = data_type  # The type of data which determines what actions can happen
+        self.sample_name = sample_name  # The sample name which is only used with DelDataSample
         self.barcode_info = {}  # holds a dictionary of indexes and library sizes for each barcode pairing found
-        self.barcode_numbers = {}  # holds a dicionary of how many synthons per building block
+        # Unique synthons per barcode holds a dicionary of how many synthons per building block.  This is used to calculate library size for each condition
+        self.unique_synthons_per_barcode = {}
+        # If unique_synthons is supplied use those, otherwise infer by unique synthons whithin
+        # barcode columns
         if unique_synthons is None:
-            self._infer_barcode_numbers()
+            self._infer_number_unique_synthons()
         else:
-            self.update_barcode_numbers(unique_synthons)
+            self.update_synthon_numbers(unique_synthons)
 
     def __repr__(self):
         """
-        Return a string representation of the data.
+        Return a string representation of the data.  Very similar to how pandas.DataFrame outputs
+        the data
         """
         buf = StringIO("")
         self.data.to_string(
@@ -48,7 +52,8 @@ class DelData:
 
     def __str__(self):
         """
-        Return a string print of the data.
+        Return a string print of the data.  Very similar to how pandas.DataFrame outputs
+        the data
         """
         buf = StringIO("")
         self.data.to_string(
@@ -64,11 +69,13 @@ class DelData:
         return buf.getvalue()
 
     def _zscore(self, counts: np.ndarray) -> np.ndarray:
+        """
+        Standard z-scoring of the counts data
+        """
         if self.data_type == "zscore":
             raise Exception("Data is already zscored")
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
-        # Get the zscore of the count columns
         return zscore(counts)
 
     def _binomial_zscore(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
@@ -76,19 +83,21 @@ class DelData:
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
         Where the denominator is the binomial standard deviation
+        Which equals sqrt(total_counts) * (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = np.sum(counts, axis=0)
+        total_counts = np.sum(counts, axis=0)  # Total counts is the sum of each column
         observed_probability = counts / total_counts
-        denominator = math.sqrt(expected_probability * (1 - expected_probability))
-        return np.sqrt(total_counts) * (observed_probability - expected_probability) / denominator
+        binomial_sd = math.sqrt(expected_probability * (1 - expected_probability))
+        return np.sqrt(total_counts) * (observed_probability - expected_probability) / binomial_sd
 
     def _binomial_zscore_sample_normalized(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
-        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Calculated as:
+        (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
         Where the denominator is the binomial standard deviation
         """
         if self.data_type != "Count":
@@ -96,8 +105,8 @@ class DelData:
         expected_probability = 1/del_library_size  # get the probability as 1/library size
         total_counts = np.sum(counts, axis=0)
         observed_probability = counts / total_counts
-        denominator = math.sqrt(expected_probability * (1 - expected_probability))
-        return (observed_probability - expected_probability) / denominator
+        binomial_sd = math.sqrt(expected_probability * (1 - expected_probability))
+        return (observed_probability - expected_probability) / binomial_sd
 
     def _enrichment(self, counts: np.ndarray, del_library_size: int, inplace=False) -> np.ndarray:
         """
@@ -107,52 +116,65 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         total_counts = np.sum(counts, axis=0)
-        enrichment_score = counts * \
-            del_library_size / total_counts
-        return enrichment_score
+        return counts * del_library_size / total_counts
 
-    def _infer_barcode_numbers(self):
+    def _infer_number_unique_synthons(self):
         """
-        Infers the number of unique synthons per barcode that was counted by finding the number of
-        uniques in the data set assuming that at least one would be sequenced
+        Infers the number of unique synthons by finding the amount of unique barcodes per barcode column
         """
         print("Total synthons inferred")
         for column_name in self.counted_barcode_columns():
             unique_synthons = [synthon for synthon in set(self.data[column_name]) if notna(synthon)]
             print(f"{column_name}: {len(unique_synthons)}")
-            self.barcode_numbers[column_name] = len(unique_synthons)
-        print("If this is not correct, update with known number with update_barcode_numbers()")
+            self.unique_synthons_per_barcode[column_name] = len(unique_synthons)
+        print("If this is not correct, update with known number with update_synthon_numbers()")
 
-    def update_barcode_numbers(self, barcode_numbers: List[int]) -> None:
+    def update_synthon_numbers(self, unique_synthons_per_barcode: List[int]) -> None:
         """
         Allows user to update barcode number to fix what is inferred
         """
         barcode_columns = self.counted_barcode_columns()
-        if not isinstance(barcode_numbers, list):
+        # Enforce the input as a list
+        if not isinstance(unique_synthons_per_barcode, list):
             raise Exception(
                 f"List of number of unique sythons required with the same length as counted barcodes, {len(barcode_columns)}")
-        if len(barcode_numbers) != len(barcode_columns):
+        # Make sure there are enough for as many barcode columns exist
+        if len(unique_synthons_per_barcode) != len(barcode_columns):
             raise Exception(
-                f"Length of list, {len(barcode_numbers)}, shorter than the number of counted barcodes {','.join(barcode_columns)}")
-        for barcode_num, total_barcodes in zip(barcode_columns, barcode_numbers):
-            self.barcode_numbers[barcode_num] = total_barcodes
+                f"Length of list, {len(unique_synthons_per_barcode)}, shorter than the number of counted barcodes {','.join(barcode_columns)}")
+        for barcode_num, total_barcodes in zip(barcode_columns, unique_synthons_per_barcode):
+            self.unique_synthons_per_barcode[barcode_num] = total_barcodes
         self._infer_barcode_groups()
         for barcodes_key in self.barcode_info.keys():
             library_size = 1
             for barcode_num in barcodes_key.split(","):
-                library_size = library_size * self.barcode_numbers[barcode_num]
+                library_size = library_size * self.unique_synthons_per_barcode[barcode_num]
             self.barcode_info[barcodes_key]["library_size"] = library_size
 
     def _infer_barcode_groups(self):
+        """
+        Finds the grouping of barcode enrichments.  This could be all tri-synthons, bi-synthons
+        within a tri-synthon design or mono-synthons within tri-synthon design etc.  Each group is
+        normalized separately, therefor the indexes of where each group occurs is inferred here and
+        stored within self.barcode_info.  The potential DEL library size for each group is also
+        inferred by how many unique synthons exists with each building block that is used within the
+        group and also stored in self.barcode_info.
+        """
         barcode_columns = np.array(self.counted_barcode_columns())
+        # Create an array of true/false of where a barcode is included. For di-synthon counts, only
+        # two barcode are filled.  This true false is used to create a key for each row
         barcode_included = notna(self.data[barcode_columns]).values
+        # For each row, create a key of comma separated barcode column names.  So for di-synthon
+        # which is Barcode_1 and Barcode_3 count, this would create "Barcode_1,Barcode_3"
         barcode_keys = np.apply_along_axis(lambda row: ",".join(
             barcode_columns[row]), 1, barcode_included)
+        # For each unique group counting, ie "Barcode_1,Barcode_3", get the indexes and the inferred
+        # library size.  The index is used later for scoring the counts by the groups
         for barcode_key in set(barcode_keys):
             self.barcode_info[barcode_key] = {"indexes": np.where(barcode_keys == barcode_key)[0]}
             library_size = 1
             for barcode_num in barcode_key.split(","):
-                library_size = library_size * self.barcode_numbers[barcode_num]
+                library_size = library_size * self.unique_synthons_per_barcode[barcode_num]
             self.barcode_info[barcode_key]["library_size"] = library_size
 
     def data_columns(self):
@@ -167,9 +189,10 @@ class DelData:
         """
         return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
 
-    def number_barcodes(self) -> List[int]:
+    def number_synthons(self) -> List[int]:
         """
-        Returns the bumber of barcodes for each row of the data
+        Returns the bumber of barcodes for each row of the data.  This is used for the comparison
+        graph
         """
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
         return notna(barcode_data).sum(axis=1).values
@@ -252,6 +275,10 @@ class DelDataMerged(DelData):
         Reduces the data to only include with at least on sample higher than min_score.  Will do so in
         place or return a new DelDataSample
         """
+        max_value = max(self.data[self.data_columns()].max())
+        if min_score > max_value:
+            raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
+                            Choose a lower cutoff")
         reduced_data = self.data[(self.data[self.data_columns()] >= min_score).any(1)]
         if inplace:
             self.data = reduced_data
@@ -416,23 +443,23 @@ class DelDataMerged(DelData):
         max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
         colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
         fig = go.Figure()
-        number_barcodes = reduced_data.number_barcodes()
-        unique_number_barcodes = list(set(number_barcodes))
-        unique_number_barcodes.sort(reverse=True)
-        for num_barcode in unique_number_barcodes:
-            reduced_data_barcode_num = reduced_data.data.iloc[np.where(
-                number_barcodes == num_barcode)[0], :]
+        number_synthons = reduced_data.number_synthons()
+        unique_number_synthons = list(set(number_synthons))
+        unique_number_synthons.sort(reverse=True)
+        for num_synthons in unique_number_synthons:
+            reduced_data_synthon_num = reduced_data.data.iloc[np.where(
+                number_synthons == num_synthons)[0], :]
             fig.add_trace(go.Scatter(
-                name=f"{num_barcode} synthons",
-                x=reduced_data_barcode_num[x_sample].round(3),
-                y=reduced_data_barcode_num[y_sample].round(3),
+                name=f"{num_synthons} synthons",
+                x=reduced_data_synthon_num[x_sample].round(3),
+                y=reduced_data_synthon_num[y_sample].round(3),
                 mode='markers',
-                marker=dict(color=colors[num_barcode]),
+                marker=dict(color=colors[num_synthons]),
                 hovertemplate="%{text}",
                 text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
-                      zip(reduced_data_barcode_num[x_sample], reduced_data_barcode_num[y_sample],
-                          reduced_data_barcode_num.Barcode_1, reduced_data_barcode_num.Barcode_2,
-                          reduced_data_barcode_num.Barcode_3)]
+                      zip(reduced_data_synthon_num[x_sample], reduced_data_synthon_num[y_sample],
+                          reduced_data_synthon_num.Barcode_1, reduced_data_synthon_num.Barcode_2,
+                          reduced_data_synthon_num.Barcode_3)]
             ))
         fig.add_shape(type='line',
                       x0=0,
@@ -470,6 +497,10 @@ class DelDataSample(DelData):
         Reduces the data to only include data which is higher than the min_score.  Will do so in
         place or return a new DelDataSample
         """
+        max_value = max(self.data[self.data_type])
+        if min_score > max_value:
+            raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
+                            Choose a lower cutoff")
         reduced_data = self.data[self.data[self.data_type] >= min_score]
         if inplace:
             self.data = reduced_data
@@ -569,20 +600,20 @@ class DelDataSample(DelData):
         y-axis the single building block.  Currently only works for 3 barcode data
         """
         if barcodes is None:
-            barcodes = deldata.counted_barcode_columns()
+            barcodes = self.counted_barcode_columns()
         reduced_data = self.reduce(min_score)
         max_score = reduced_data.max_score()
         max_point_size = 12
         sizes = reduced_data.data[reduced_data.data_column()].apply(
             lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
         if len(barcodes) >= 3:
-            _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+            self._graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
         elif len(barcodes) == 2:
-            _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
+            self._graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
         else:
             raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
 
-    def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_3_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block when there are 3 barcodes. 
@@ -637,7 +668,7 @@ class DelDataSample(DelData):
         file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
-    def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_2_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block when there are 2 barcodes. 
@@ -673,7 +704,7 @@ class DelDataSample(DelData):
         only works for 3 barcode data
         """
         if barcodes is None:
-            barcodes = deldata.counted_barcode_columns()
+            barcodes = self.counted_barcode_columns()
         if not len(barcodes) >= 3:
             raise Exception("At least 3 counted barcoded needed for a 3d graph")
         reduced_data = self.reduce(min_score)
@@ -707,7 +738,7 @@ class DelDataSample(DelData):
                 zaxis=dict(showticklabels=False, title_text=barcodes[2]),
             )
         )
-        file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
+        file_name = f"{date.today()}_{self.sample_name}.{self.data_descriptor()}.3d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -730,41 +761,3 @@ def read_sample(file_path: str, sample_name: str):
         raise Exception(
             "Data type is not sample. Maybe use delanalysis.read_merge() if it is the merged output data")
     return DelDataSample(data, sample_name=sample_name)
-
-
-def _test():
-    "Setup for testing"
-    # data = read_sample("../../test_del/test_counts.csv", "test")
-    # full.library_size(len(full.data.index))
-    print("Inporting and concatenating")
-    breakpoint()
-    double = read_merged("../../test_del/test.all.Double.csv")
-    single = read_merged("../../test_del/test.all.Single.csv")
-    full = read_merged("../../test_del/test.all.csv")
-    full_double = full.concat(double)
-    full_double_single = full_double.concat(single)
-    print("Normalizing")
-    full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
-    full_double_single_zscore.subtract_background("test_1", inplace=True)
-    # breakpoint()
-    # full_zscore = full.binomial_zscore_sample_normalized()
-    # double_zscore = double.binomial_zscore_sample_normalized()
-    # single_zscore = single.binomial_zscore_sample_normalized()
-    # full_double_zscore = full_zscore.concat(double_zscore)
-    # full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
-    # full_double_single_zscore_2.subtract_background("test_1", inplace=True)
-    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
-    breakpoint()
-    print("Graphing")
-    sample_2 = full_double_single_zscore.sample_data("test_2")
-    sample_2.graph_2d("../../test_del/", 4)
-    sample_2.graph_2d("../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
-    sample_2.graph_3d("../../test_del/", 4)
-
-
-def main():
-    _test()
-
-
-if __name__ == "__main__":
-    main()
