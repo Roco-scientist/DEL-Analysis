@@ -275,6 +275,10 @@ class DelDataMerged(DelData):
         Reduces the data to only include with at least on sample higher than min_score.  Will do so in
         place or return a new DelDataSample
         """
+        max_value = max(self.data[self.data_columns()].max())
+        if min_score > max_value:
+            raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
+                            Choose a lower cutoff")
         reduced_data = self.data[(self.data[self.data_columns()] >= min_score).any(1)]
         if inplace:
             self.data = reduced_data
@@ -493,6 +497,10 @@ class DelDataSample(DelData):
         Reduces the data to only include data which is higher than the min_score.  Will do so in
         place or return a new DelDataSample
         """
+        max_value = max(self.data[self.data_type])
+        if min_score > max_value:
+            raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
+                            Choose a lower cutoff")
         reduced_data = self.data[self.data[self.data_type] >= min_score]
         if inplace:
             self.data = reduced_data
@@ -592,20 +600,20 @@ class DelDataSample(DelData):
         y-axis the single building block.  Currently only works for 3 barcode data
         """
         if barcodes is None:
-            barcodes = deldata.counted_barcode_columns()
+            barcodes = self.counted_barcode_columns()
         reduced_data = self.reduce(min_score)
         max_score = reduced_data.max_score()
         max_point_size = 12
         sizes = reduced_data.data[reduced_data.data_column()].apply(
             lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
         if len(barcodes) >= 3:
-            _graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+            self._graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
         elif len(barcodes) == 2:
-            _graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
+            self._graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
         else:
             raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
 
-    def _graph_2d_3_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_3_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block when there are 3 barcodes. 
@@ -660,7 +668,7 @@ class DelDataSample(DelData):
         file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
-    def _graph_2d_2_barcodes(reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_2_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block when there are 2 barcodes. 
@@ -696,7 +704,7 @@ class DelDataSample(DelData):
         only works for 3 barcode data
         """
         if barcodes is None:
-            barcodes = deldata.counted_barcode_columns()
+            barcodes = self.counted_barcode_columns()
         if not len(barcodes) >= 3:
             raise Exception("At least 3 counted barcoded needed for a 3d graph")
         reduced_data = self.reduce(min_score)
@@ -730,7 +738,7 @@ class DelDataSample(DelData):
                 zaxis=dict(showticklabels=False, title_text=barcodes[2]),
             )
         )
-        file_name = f"{date.today()}_{deldata.sample_name}.{deldata.data_descriptor()}.3d.html"
+        file_name = f"{date.today()}_{self.sample_name}.{self.data_descriptor()}.3d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
 
@@ -753,41 +761,3 @@ def read_sample(file_path: str, sample_name: str):
         raise Exception(
             "Data type is not sample. Maybe use delanalysis.read_merge() if it is the merged output data")
     return DelDataSample(data, sample_name=sample_name)
-
-
-def _test():
-    "Setup for testing"
-    # data = read_sample("../../test_del/test_counts.csv", "test")
-    # full.library_size(len(full.data.index))
-    print("Inporting and concatenating")
-    breakpoint()
-    double = read_merged("../../test_del/test.all.Double.csv")
-    single = read_merged("../../test_del/test.all.Single.csv")
-    full = read_merged("../../test_del/test.all.csv")
-    full_double = full.concat(double)
-    full_double_single = full_double.concat(single)
-    print("Normalizing")
-    full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
-    full_double_single_zscore.subtract_background("test_1", inplace=True)
-    # breakpoint()
-    # full_zscore = full.binomial_zscore_sample_normalized()
-    # double_zscore = double.binomial_zscore_sample_normalized()
-    # single_zscore = single.binomial_zscore_sample_normalized()
-    # full_double_zscore = full_zscore.concat(double_zscore)
-    # full_double_single_zscore_2 = full_double_zscore.concat(single_zscore)
-    # full_double_single_zscore_2.subtract_background("test_1", inplace=True)
-    full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
-    breakpoint()
-    print("Graphing")
-    sample_2 = full_double_single_zscore.sample_data("test_2")
-    sample_2.graph_2d("../../test_del/", 4)
-    sample_2.graph_2d("../../test_del/", 4, barcodes=["Barcode_1", "Barcode_2"])
-    sample_2.graph_3d("../../test_del/", 4)
-
-
-def main():
-    _test()
-
-
-if __name__ == "__main__":
-    main()
