@@ -108,7 +108,7 @@ class DelData:
         binomial_sd = math.sqrt(expected_probability * (1 - expected_probability))
         return (observed_probability - expected_probability) / binomial_sd
 
-    def _enrichment(self, counts: np.ndarray, del_library_size: int, inplace=False) -> np.ndarray:
+    def _enrichment(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
@@ -131,7 +131,7 @@ class DelData:
 
     def update_synthon_numbers(self, unique_synthons_per_barcode: List[int]) -> None:
         """
-        Allows user to update barcode number to fix what is inferred
+        Allows user to update unique synthon numbers to fix what is inferred
         """
         barcode_columns = self.counted_barcode_columns()
         # Enforce the input as a list
@@ -142,14 +142,11 @@ class DelData:
         if len(unique_synthons_per_barcode) != len(barcode_columns):
             raise Exception(
                 f"Length of list, {len(unique_synthons_per_barcode)}, shorter than the number of counted barcodes {','.join(barcode_columns)}")
+        # For each inputed unique synthon, replace the dictionary value already held
         for barcode_num, total_barcodes in zip(barcode_columns, unique_synthons_per_barcode):
             self.unique_synthons_per_barcode[barcode_num] = total_barcodes
+        # Get the barcode groups and update the DEL library sizes based on the new wynthon numbers
         self._infer_barcode_groups()
-        for barcodes_key in self.barcode_info.keys():
-            library_size = 1
-            for barcode_num in barcodes_key.split(","):
-                library_size = library_size * self.unique_synthons_per_barcode[barcode_num]
-            self.barcode_info[barcodes_key]["library_size"] = library_size
 
     def _infer_barcode_groups(self):
         """
@@ -181,12 +178,14 @@ class DelData:
         """
         Returns all column names that contain data that is not the barcodes
         """
+        # Return any column that does not start with Barcode
         return [col for col in self.data.columns if not re.search("^Barcode(_\d+){0,1}$", col)]
 
     def counted_barcode_columns(self):
         """
         Returns all building block barcode column names
         """
+        # Return any column that starts with Barcode and does or does not have a digit
         return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
 
     def number_synthons(self) -> List[int]:
@@ -194,6 +193,8 @@ class DelData:
         Returns the bumber of barcodes for each row of the data.  This is used for the comparison
         graph
         """
+        # First select only barcode data, then true false whether or not the barcode was used for
+        # counts, the sum the rows
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
         return notna(barcode_data).sum(axis=1).values
 
@@ -205,7 +206,7 @@ class DelData:
 
     def data_descriptor(self):
         """
-        Returns teh data type without spaces for output files
+        Returns the data type without spaces for output files
         """
         return self.data_type.replace(" ", "_")
 
@@ -223,13 +224,17 @@ class DelDataMerged(DelData):
             print("The data should probably be z-scored first")
         if "quantile_normalize" in self.data_type:
             raise Exception("Data is already quantile normalized")
+        # Rank mean the data
         rank_mean = self.data.loc[:, self.data_columns()].stack().groupby(
             self.data.loc[:, self.data_columns()].rank(method='first').stack().astype(int)).mean()
+        # Quantile normalize based on rank mean
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
             method='min').stack().astype(int).map(rank_mean).unstack()
+        # Create the dataframe with barcode columns and quantile normalized data
         quantile_norm_df = concat(
             [self.data.loc[:, self.counted_barcode_columns()], quantile_norm], ignore_index=True,
             sort=False, axis=1)
+        # Add back the column names
         quantile_norm_df.columns = self.counted_barcode_columns() + self.data_columns()
         if inplace:
             self.data = quantile_norm_df
@@ -256,12 +261,16 @@ class DelDataMerged(DelData):
         """
         Subtracts background
         """
+        # Create a DataFrame without the background data
         del_data = self.data.loc[:, self.data_columns()].drop(columns=[background_name])
+        # Subtract the background data from the created del_data DataFrame
         background_data = self.data[background_name]
         del_data_back_sub = del_data.sub(
             background_data, axis=0)
+        # Create the dataframe with the barcode columns and the subtracted data
         del_data_back_sub_df = concat([self.data.loc[:, self.counted_barcode_columns()],
                                        del_data_back_sub], ignore_index=True, sort=False, axis=1)
+        # Add back the column names
         del_data_back_sub_df.columns = self.counted_barcode_columns() + del_data_back_sub.columns.tolist()
         if inplace:
             self.data = del_data_back_sub_df
@@ -272,13 +281,16 @@ class DelDataMerged(DelData):
 
     def reduce(self, min_score: float, inplace=False):
         """
-        Reduces the data to only include with at least on sample higher than min_score.  Will do so in
+        Reduces the data to only include rows with at least one sample higher than min_score.  Will do so in
         place or return a new DelDataSample
         """
+        # Check to make sure the cutoff score is not above the maximum of the data
         max_value = max(self.data[self.data_columns()].max())
         if min_score > max_value:
             raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
                             Choose a lower cutoff")
+        # Reduce by removing any row which does not contain at least one value greater than the
+        # cutoff
         reduced_data = self.data[(self.data[self.data_columns()] >= min_score).any(1)]
         if inplace:
             self.data = reduced_data
@@ -287,11 +299,17 @@ class DelDataMerged(DelData):
             return DelDataMerged(reduced_data, self.data_type)
 
     def merge(self, deldata, inplace=False):
+        """
+        Merges a DelDataMerged into the current DelDataMerged object to create more sample columns.  
+        Does not work with DelDataSample at this point
+        """
         if type(deldata) == DelDataSample:
             raise Exception("Only merged data is supported at this time")
+        # Make sure all merged data is of the same type, e.g. zscored
         if self.data_type != deldata.data_type:
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
+        # Merge the two together
         merged_data = merge(self.data, deldata.data,
                             on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
@@ -302,12 +320,20 @@ class DelDataMerged(DelData):
             return DelDataMerged(merged_data, self.data_type)
 
     def concat(self, deldata, inplace=False):
+        """
+        Concats rows of a DelDataMerged into the current DelDataMerged object to create more rows of
+        counted barcodes/synthons.  Especially used to concat di-synthon counts with tri and mono
+        etc.
+        """
+        # If the column names don't make, raise an exception
         if any([col not in deldata.data.columns for col in self.data.columns])\
                 or any([col not in self.data.columns for col in deldata.data.columns]):
             raise Exception("Data column mismatch")
+        # If the data types are not the same, e.g. zscored, raise an exception
         if self.data_type != deldata.data_type:
             raise Exception(
                 "Data types do not match.  Trying to concat {deldata.data_type} into {self.data_type}")
+        # Add the new rows
         concat_data = concat([self.data, deldata.data], ignore_index=True, sort=False)
         if inplace:
             self.data = concat_data
@@ -319,12 +345,24 @@ class DelDataMerged(DelData):
         """
         Outputs a DelDataSample object from the DelDataMerged object
         """
-        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3", sample_name]]
-        if self.data_type == "zscore":
-            sample_data.rename({sample_name: "zscore"}, axis=1, inplace=True)
-        else:
-            sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
+        sample_data = self.data.loc[:, self.counted_barcode_columns() + [sample_name]]
+        # Rename the sample name column to the data type
+        sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
         return DelDataSample(sample_data, self.data_type, sample_name)
+
+    def select_samples(self, sample_names: List[str], inplace=False):
+        """
+        Returns a subset of samples from a DelDataMerged object.  Especially used for the
+        comparison_graph
+        """
+        if not isinstance(sample_names, list):
+            raise Exception("sample_names needs to be a list of sample names")
+        sample_data = self.data.loc[:, self.counted_barcode_columns() + sample_names]
+        if inplace:
+            self.data = sample_data
+            return None
+        else:
+            return DelDataMerged(sample_data, self.data_type)
 
     def sample_enrichment(self, inplace=False):
         """
@@ -349,19 +387,6 @@ class DelDataMerged(DelData):
             return None
         else:
             return DelDataMerged(sample_enrichment_df, "sample enrichment")
-
-    def select_samples(self, sample_names: List[str], inplace=False):
-        """
-        Returns a subset of samples from a DelDataMerged object
-        """
-        if not isinstance(sample_names, list):
-            raise Exception("sample_names needs to be a list of sample names")
-        sample_data = self.data.loc[:, ["Barcode_1", "Barcode_2", "Barcode_3"] + sample_names]
-        if inplace:
-            self.data = sample_data
-            return None
-        else:
-            return DelDataMerged(sample_data, self.data_type)
 
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
