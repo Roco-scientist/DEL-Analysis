@@ -534,12 +534,13 @@ class DelDataSample(DelData):
     def merge(self, deldata):
         """
         Merges two DelDataSample objects and outputs a DelDataMerged object
-        Still a work in progress
         """
         if self.data_type != deldata.data_type:
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
-        merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1), deldata.data,
+        # Merge data and renmae the data column to the sample name for each
+        merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1),
+                            deldata.data.rename({deldata.data_type: deldata.sample_name}, axis=1),
                             on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         return DelDataMerged(merged_data, self.data_type)
@@ -550,9 +551,11 @@ class DelDataSample(DelData):
         place or return a new DelDataSample
         """
         max_value = max(self.data[self.data_type])
+        # Make sure hte data isn't being cocmpletely reduced because the min_score is too high
         if min_score > max_value:
             raise Exception(f"Reduce value cutoff of {min_score} above the maximum score within the data of {max_value}\n\
                             Choose a lower cutoff")
+        # Reduce
         reduced_data = self.data[self.data[self.data_type] >= min_score]
         if inplace:
             self.data = reduced_data
@@ -573,6 +576,11 @@ class DelDataSample(DelData):
         return self.data_type
 
     def zscore(self, inplace=False):
+        """
+        Z-scores the data.  Best used when there is good sequencing coverage and the DEL library is
+        not too large.
+        (count - mean_count) / stadard_deviation
+        """
         zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
             # get indexes for tri/di/mono synthon groups to normalize together
@@ -676,13 +684,18 @@ class DelDataSample(DelData):
         """
         if barcodes is None:
             barcodes = self.counted_barcode_columns()
+        # Reduce the data
         reduced_data = self.reduce(min_score)
+        # Get the max to scale size and color
         max_score = reduced_data.max_score()
         max_point_size = 12
+        # Scale the sizes to the max_point_size using the max value
         sizes = reduced_data.data[reduced_data.data_column()].apply(
             lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+        # If there are more than 3 barcodes, create two 2d graphs
         if len(barcodes) >= 3:
             self._graph_2d_3_barcodes(reduced_data, out_dir, sizes, barcodes)
+        # If there are only 2 barcodes, create a single 2d graph
         elif len(barcodes) == 2:
             self._graph_2d_2_barcodes(reduced_data, out_dir, sizes, barcodes)
         else:
@@ -691,13 +704,20 @@ class DelDataSample(DelData):
     def _graph_2d_3_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
-        y-axis the single building block when there are 3 barcodes. 
+        y-axis the single building block when there are 3 barcodes. Creates two graphs to represent
+        both possibilities
+
+        :barcodes: list of 3 barcodes if the first three barcodes are not wanted
         """
+        # Text data for the first two barcodes together
         ab = [f"{a},{b}" for a, b in zip(reduced_data.data[barcodes[0]],
                                          reduced_data.data[barcodes[1]])]
+        # Text data for the second two barcodes together
         bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
                                          reduced_data.data[barcodes[2]])]
+        # Create a two plot figure
         fig = make_subplots(rows=1, cols=2)
+        # Create the barcode_1 + barcode_2 vs barcode_3 graph
         fig.append_trace(go.Scatter(
             x=ab,
             y=reduced_data.data[barcodes[2]],
@@ -715,10 +735,13 @@ class DelDataSample(DelData):
                   zip(ab, reduced_data.data[barcodes[2]], reduced_data.data[reduced_data.data_column()])]
 
         ), row=1, col=1)
+        # Update the layout to remove tickmarks and add axis lables
         fig["layout"]["xaxis"]["title"] = f"{barcodes[0]} and {barcodes[1]}"
         fig["layout"]["xaxis"]["showticklabels"] = False
         fig["layout"]["yaxis"]["title"] = barcodes[2]
         fig["layout"]["yaxis"]["showticklabels"] = False
+
+        # Create the barcode_1 vs barcode_2 + barcode_3 graph
         fig.append_trace(go.Scatter(
             x=bc,
             y=reduced_data.data[barcodes[0]],
@@ -736,17 +759,18 @@ class DelDataSample(DelData):
                   zip(bc, reduced_data.data[barcodes[0]], reduced_data.data[reduced_data.data_column()])]
 
         ), row=1, col=2)
+        # Update the layout to remove tickmarks and add axis lables
         fig["layout"]["xaxis2"]["title"] = f"{barcodes[1]} and {barcodes[2]}"
         fig["layout"]["xaxis2"]["showticklabels"] = False
         fig["layout"]["yaxis2"]["title"] = barcodes[0]
         fig["layout"]["yaxis2"]["showticklabels"] = False
         file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+        # Create the interactive graph
         fig.write_html(os.path.join(out_dir, file_name))
 
     def _graph_2d_2_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
         """
-        Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
-        y-axis the single building block when there are 2 barcodes. 
+        Creates a 2d graph from DelDataSample object with each axis being a single barcode/synthon. 
         """
         fig = go.Figure(data=go.Scatter(
             x=reduced_data.data[barcodes[0]],
@@ -765,9 +789,11 @@ class DelDataSample(DelData):
                   zip(reduced_data.data[barcodes[0]], reduced_data.data[barcodes[1]], reduced_data.data[reduced_data.data_column()])]
 
         ))
+        # Update the axis titles
         fig.update_layout(
             xaxis_title=barcodes[0],
             yaxis_title=barcodes[1])
+        # Remove the tickmarks
         fig["layout"]["xaxis"]["showticklabels"] = False
         fig["layout"]["yaxis"]["showticklabels"] = False
         file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
@@ -777,16 +803,22 @@ class DelDataSample(DelData):
         """
         Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
         only works for 3 barcode data
+
+        :barcodes: list of 3 barcodes if the first three barcodes are not wanted
         """
         if barcodes is None:
             barcodes = self.counted_barcode_columns()
         if not len(barcodes) >= 3:
             raise Exception("At least 3 counted barcoded needed for a 3d graph")
+        # Reduce the data.  Otherwise it can become too many megabytes
         reduced_data = self.reduce(min_score)
+        # get the max score to scale the size and colors
         max_score = reduced_data.max_score()
         max_point_size = 12
+        # Scale the sizes to the max point size, max and min score
         sizes = reduced_data.data[reduced_data.data_column()].apply(
             lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
+        # Create the 3d graph
         fig = go.Figure(data=[go.Scatter3d(
             x=reduced_data.data[barcodes[0]],
             y=reduced_data.data[barcodes[1]],
