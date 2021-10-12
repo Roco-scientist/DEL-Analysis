@@ -15,7 +15,7 @@ from typing import Optional, Type, List
 
 class DelData:
     """
-    An object for working with data output from DEL-Decode
+    An object for working with data output from NGS-Barcode-Count
     """
 
     def __init__(self, data: DataFrame, data_type="Count", sample_name=None, unique_synthons: List[int] = None):
@@ -213,7 +213,7 @@ class DelData:
 
 class DelDataMerged(DelData):
     """
-    An object for working with merged data output from DEL-Decode
+    An object for working with merged data output from NGS-Barcode-Count
     """
 
     def quantile_normalize(self, inplace=False):
@@ -242,20 +242,6 @@ class DelDataMerged(DelData):
             return None
         else:
             return DelDataMerged(quantile_norm_df, f"quantile normalized {self.data_type}")
-
-    def __subtract_within(self, sample_1: str, sample_2: str):
-        """
-        WORK IN PROGRESS
-        """
-        # TODO fill this in
-        pass
-
-    def __subtract_sample(self, sample_1: str, sample_2: str):
-        """
-        WORK IN PROGRESS
-        """
-        # TODO fill this in
-        pass
 
     def subtract_background(self, background_name: str, inplace=False):
         """
@@ -367,20 +353,25 @@ class DelDataMerged(DelData):
     def sample_enrichment(self, inplace=False):
         """
         (sample compound count / total sample counts) / (non-sample compound count / total non-sample counts)
+        A cross sample enrichment metric.  It breaks though when there are only counts within the
+        sample.  This is because you get a zero divsion error.  This is the metric used by dynabind
+        for their fragment DEL
         """
-        samples_data = self.data.loc[:, self.data_columns()]
-        total_counts = {column: count for column, count in
-                        zip(self.data_columns(), samples_data.sum(0))}
+        counts = self.data.loc[:, self.data_columns()].values
         sample_enrichment_df = DataFrame()
-        for column in samples_data:
-            sample_data = samples_data.loc[:, column].values / total_counts[column]
-            total_other_reads = 0
-            for other_column in total_counts.keys():
-                if other_column != column:
-                    total_other_reads += total_counts[other_column]
-            all_other_data = (samples_data.drop(columns=[column]).sum(1) / total_other_reads).values
-            sample_enrichment = np.divide(sample_data, all_other_data)
-            sample_enrichment_df[column] = sample_enrichment
+        for col_index, sample_id in enumerate(self.data_columns()):
+            # Get row sumns of all columns except the sample column
+            non_sample_counts = np.sum(np.delete(counts, col_index, 1), axis=1)
+            # Get total non-sample counts
+            total_non_sample_counts = np.sum(non_sample_counts)
+            # Get the sample counts with the col_index
+            sample_counts = counts[:, col_index]
+            # Get the total sample counts
+            total_sample_counts = np.sum(sample_counts)
+            # compute the equation within the function description
+            sample_data = (sample_counts / total_sample_counts) / \
+                (non_sample_counts / total_non_sample_counts)
+            sample_enrichment_df[sample_id] = sample_data
         if inplace:
             self.data = sample_enrichment_df
             self.data_type = "sample enrichment"
@@ -389,9 +380,16 @@ class DelDataMerged(DelData):
             return DelDataMerged(sample_enrichment_df, "sample enrichment")
 
     def zscore(self, inplace=False):
+        """
+        Z-scores the data.  Best used when there is good sequencing coverage and the DEL library is
+        not too large.
+        (count - mean_count) / stadard_deviation
+        """
         zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes and normalize
         for barcode_group in self.barcode_info.keys():
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
             zscore_df.loc[sel_indexes, self.data_columns()] = self._zscore(
@@ -404,9 +402,18 @@ class DelDataMerged(DelData):
             return DelDataMerged(zscore_df, data_type="zscore")
 
     def binomial_zscore(self, inplace=False):
+        """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
+        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Where the denominator is the binomial standard deviation
+        Which equals sqrt(total_counts) * (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
+        """
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -420,9 +427,18 @@ class DelDataMerged(DelData):
             return DelDataMerged(binomial_zscore_df, data_type="binomial_zscore")
 
     def binomial_zscore_sample_normalized(self, inplace=False):
+        """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
+        Calculated as:
+        (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
+        Where the denominator is the binomial standard deviation
+        """
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -442,7 +458,10 @@ class DelDataMerged(DelData):
         """
         enrichment_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -460,20 +479,28 @@ class DelDataMerged(DelData):
         Compares two samples on a single graph where x_sample is on the x axis with the enrichment
         or count and y_sample is on the y_axis
         """
-        for barcode_name in ("Barcode_1", "Barcode_2", "Barcode_3"):
-            if barcode_name not in self.counted_barcode_columns():
-                raise Exception(
-                    f"{barcode_name} missing.  Comparison graph currently only works with 3 barcodes")
         reduced_data = self.select_samples([x_sample, y_sample]).reduce(min_score)
         max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
-        colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
         fig = go.Figure()
+        # Get the number of synthons for each row of data
         number_synthons = reduced_data.number_synthons()
+        # Create a unique list to iterate over for graphing sepearately
         unique_number_synthons = list(set(number_synthons))
         unique_number_synthons.sort(reverse=True)
+        # For tri, di, and mono synthon, graph seequentially in the colors above
+        colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
         for num_synthons in unique_number_synthons:
+            # create a dataframe only containing the rows with the number of synthons
             reduced_data_synthon_num = reduced_data.data.iloc[np.where(
                 number_synthons == num_synthons)[0], :]
+            # create the hover text
+            barcode_texts = ["<br>".join([f"<b>{barcode_name}:<b> {barcode_value}"for barcode_name, barcode_value in
+                                         zip(self.counted_barcode_columns(), barcode_values)]) for barcode_values in
+                             reduced_data_synthon_num[self.counted_barcode_columns()].values]
+            hovertext = [f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br>{barcode_text}"
+                         for x, y, barcode_text in
+                         zip(reduced_data_synthon_num[x_sample], reduced_data_synthon_num[y_sample], barcode_texts)]
+            # Add the synthon point plot
             fig.add_trace(go.Scatter(
                 name=f"{num_synthons} synthons",
                 x=reduced_data_synthon_num[x_sample].round(3),
@@ -481,27 +508,27 @@ class DelDataMerged(DelData):
                 mode='markers',
                 marker=dict(color=colors[num_synthons]),
                 hovertemplate="%{text}",
-                text=[f"<b>{x_sample}:<b> {round(x, 3)}<br><b>{y_sample}:<b> {round(y, 3)}<br><b>Barcode_1:<b> {bb_1}<br><b>Barcode_2:<b> {bb_2}<br><b>Barcode_3:<b> {bb_3}" for x, y, bb_1, bb_2, bb_3 in
-                      zip(reduced_data_synthon_num[x_sample], reduced_data_synthon_num[y_sample],
-                          reduced_data_synthon_num.Barcode_1, reduced_data_synthon_num.Barcode_2,
-                          reduced_data_synthon_num.Barcode_3)]
+                text=hovertext
             ))
+        # Add the diagonal
         fig.add_shape(type='line',
                       x0=0,
                       y0=0,
                       x1=max_value,
                       y1=max_value,
                       line=dict(color='Red'))
+        # Add the sample names to the axis
         fig.update_layout(
             xaxis_title=f"{x_sample} {reduced_data.data_type}",
             yaxis_title=f"{y_sample} {reduced_data.data_type}")
+        # Output hte graph
         file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{self.data_descriptor()}.2d.html"
         fig.write_html(os.path.join(out_dir, file_name))
 
 
 class DelDataSample(DelData):
     """
-    An object for working with sample output from DEL-Decode
+    An object for working with sample output from NGS-Barcode-Count
     """
 
     def merge(self, deldata):
@@ -548,7 +575,9 @@ class DelDataSample(DelData):
     def zscore(self, inplace=False):
         zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes then normalize
         for barcode_group in self.barcode_info.keys():
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
             zscore_df.loc[sel_indexes, self.data_columns()] =\
@@ -562,9 +591,18 @@ class DelDataSample(DelData):
             return DelDataSample(zscore_df, "zscore", self.sample_name)
 
     def binomial_zscore(self, inplace=False):
+        """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
+        Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
+        Where the denominator is the binomial standard deviation
+        Which equals sqrt(total_counts) * (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
+        """
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -580,9 +618,18 @@ class DelDataSample(DelData):
             return DelDataSample(binomial_zscore_df, "binomial_zscore", self.sample_name)
 
     def binomial_zscore_sample_normalized(self, inplace=False):
+        """
+        See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
+        Calculated as:
+        (observed_probability - expected_probability) / sqrt(expected_probability * (1 - expected_probability))
+        Where the denominator is the binomial standard deviation
+        """
         binomial_zscore_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -604,7 +651,10 @@ class DelDataSample(DelData):
         """
         enrichment_df = self.data.copy()
         if len(self.barcode_info.keys()) == 0:
+            # get indexes for tri/di/mono synthon groups to normalize together along with library
+            # sizes
             self._infer_barcode_groups()
+        # For each tri/di/mono synthon group, get the indexes, library sizes then normalize
         for barcode_group in self.barcode_info.keys():
             del_library_size = self.barcode_info[barcode_group]["library_size"]
             sel_indexes = self.barcode_info[barcode_group]["indexes"]
@@ -769,7 +819,7 @@ class DelDataSample(DelData):
 
 def read_merged(file_path: str):
     """
-    Reads in merged output data from DEL-Decode and creates a DelDataMerged object
+    Reads in merged output data from NGS-Barcode-Count and creates a DelDataMerged object
     """
     data = read_csv(file_path)
     if "Count" in data.columns:
@@ -779,7 +829,7 @@ def read_merged(file_path: str):
 
 def read_sample(file_path: str, sample_name: str):
     """
-    Reads in sample output data from DEL-Decode and creates a DelDataMerged object
+    Reads in sample output data from NGS-Barcode-Count and creates a DelDataMerged object
     """
     data = read_csv(file_path)
     if "Count" not in data.columns:
