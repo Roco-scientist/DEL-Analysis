@@ -1,16 +1,16 @@
-import os
-import math
-import numpy as np
-import plotly.graph_objects as go
-import re
+import os as _os
+import math as _math
+import numpy as _np
+import pandas as _pd
+import plotly.graph_objects as _go
+import re as _re
+import typing as _typing
 
-from datetime import date
-from io import StringIO
-from pandas import read_csv, DataFrame, concat, merge, Series, notna
+from datetime import date as _date
+from io import StringIO as _StringIO
 
-from plotly.subplots import make_subplots
-from scipy.stats import zscore
-from typing import Optional, Type, List
+from plotly.subplots import make_subplots as _make_subplots
+from scipy.stats import zscore as _zscore
 
 
 class DelData:
@@ -18,7 +18,7 @@ class DelData:
     An object for working with data output from NGS-Barcode-Count
     """
 
-    def __init__(self, data: DataFrame, data_type="Count", sample_name=None, unique_synthons: List[int] = None):
+    def __init__(self, data: _pd.DataFrame, data_type="Count", sample_name=None, unique_synthons: _typing.List[int] = None):
         self.data = data  # DataFrame of the data
         self.data_type = data_type  # The type of data which determines what actions can happen
         self.sample_name = sample_name  # The sample name which is only used with DelDataSample
@@ -37,7 +37,7 @@ class DelData:
         Return a string representation of the data.  Very similar to how pandas.DataFrame outputs
         the data
         """
-        buf = StringIO("")
+        buf = _StringIO("")
         self.data.to_string(
             buf=buf,
             max_rows=10,
@@ -55,7 +55,7 @@ class DelData:
         Return a string print of the data.  Very similar to how pandas.DataFrame outputs
         the data
         """
-        buf = StringIO("")
+        buf = _StringIO("")
         self.data.to_string(
             buf=buf,
             max_rows=10,
@@ -68,7 +68,7 @@ class DelData:
 
         return buf.getvalue()
 
-    def _zscore(self, counts: np.ndarray) -> np.ndarray:
+    def _zscore(self, counts: _np.ndarray) -> _np.ndarray:
         """
         Standard z-scoring of the counts data
         """
@@ -76,9 +76,9 @@ class DelData:
             raise Exception("Data is already zscored")
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
-        return zscore(counts)
+        return _zscore(counts)
 
-    def _binomial_zscore(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
+    def _binomial_zscore(self, counts: _np.ndarray, del_library_size: int) -> _np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as (observed_count - expected_count)/sqrt(total_counts * expected_probability * (1-expected_probability))
@@ -88,12 +88,12 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = np.sum(counts, axis=0)  # Total counts is the sum of each column
+        total_counts = _np.sum(counts, axis=0)  # Total counts is the sum of each column
         observed_probability = counts / total_counts
-        binomial_sd = math.sqrt(expected_probability * (1 - expected_probability))
-        return np.sqrt(total_counts) * (observed_probability - expected_probability) / binomial_sd
+        binomial_sd = _math.sqrt(expected_probability * (1 - expected_probability))
+        return _np.sqrt(total_counts) * (observed_probability - expected_probability) / binomial_sd
 
-    def _binomial_zscore_sample_normalized(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
+    def _binomial_zscore_sample_normalized(self, counts: _np.ndarray, del_library_size: int) -> _np.ndarray:
         """
         See: https://pubs.acs.org/doi/10.1021/acscombsci.8b00116#
         Calculated as:
@@ -103,19 +103,19 @@ class DelData:
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
         expected_probability = 1/del_library_size  # get the probability as 1/library size
-        total_counts = np.sum(counts, axis=0)
+        total_counts = _np.sum(counts, axis=0)
         observed_probability = counts / total_counts
-        binomial_sd = math.sqrt(expected_probability * (1 - expected_probability))
+        binomial_sd = _math.sqrt(expected_probability * (1 - expected_probability))
         return (observed_probability - expected_probability) / binomial_sd
 
-    def _enrichment(self, counts: np.ndarray, del_library_size: int) -> np.ndarray:
+    def _enrichment(self, counts: _np.ndarray, del_library_size: int) -> _np.ndarray:
         """
         From https://doi.org/10.1177%2F2472555218757718
         count * library diversity / total sample counts
         """
         if self.data_type != "Count":
             raise Exception("This calculation is meant for raw counts")
-        total_counts = np.sum(counts, axis=0)
+        total_counts = _np.sum(counts, axis=0)
         return counts * del_library_size / total_counts
 
     def _infer_number_unique_synthons(self):
@@ -124,12 +124,12 @@ class DelData:
         """
         print("Total synthons inferred")
         for column_name in self.counted_barcode_columns():
-            unique_synthons = [synthon for synthon in set(self.data[column_name]) if notna(synthon)]
+            unique_synthons = [synthon for synthon in set(self.data[column_name]) if _pd.notna(synthon)]
             print(f"{column_name}: {len(unique_synthons)}")
             self.unique_synthons_per_barcode[column_name] = len(unique_synthons)
         print("If this is not correct, update with known number with update_synthon_numbers()")
 
-    def update_synthon_numbers(self, unique_synthons_per_barcode: List[int]) -> None:
+    def update_synthon_numbers(self, unique_synthons_per_barcode: _typing.List[int]) -> None:
         """
         Allows user to update unique synthon numbers to fix what is inferred
         """
@@ -157,18 +157,18 @@ class DelData:
         inferred by how many unique synthons exists with each building block that is used within the
         group and also stored in self.barcode_info.
         """
-        barcode_columns = np.array(self.counted_barcode_columns())
+        barcode_columns = _np.array(self.counted_barcode_columns())
         # Create an array of true/false of where a barcode is included. For di-synthon counts, only
         # two barcode are filled.  This true false is used to create a key for each row
-        barcode_included = notna(self.data[barcode_columns]).values
+        barcode_included = _pd.notna(self.data[barcode_columns]).values
         # For each row, create a key of comma separated barcode column names.  So for di-synthon
         # which is Barcode_1 and Barcode_3 count, this would create "Barcode_1,Barcode_3"
-        barcode_keys = np.apply_along_axis(lambda row: ",".join(
+        barcode_keys = _np.apply_along_axis(lambda row: ",".join(
             barcode_columns[row]), 1, barcode_included)
         # For each unique group counting, ie "Barcode_1,Barcode_3", get the indexes and the inferred
         # library size.  The index is used later for scoring the counts by the groups
         for barcode_key in set(barcode_keys):
-            self.barcode_info[barcode_key] = {"indexes": np.where(barcode_keys == barcode_key)[0]}
+            self.barcode_info[barcode_key] = {"indexes": _np.where(barcode_keys == barcode_key)[0]}
             library_size = 1
             for barcode_num in barcode_key.split(","):
                 library_size = library_size * self.unique_synthons_per_barcode[barcode_num]
@@ -179,16 +179,16 @@ class DelData:
         Returns all column names that contain data that is not the barcodes
         """
         # Return any column that does not start with Barcode
-        return [col for col in self.data.columns if not re.match(r"Barcode(_\d+){0,1}", col)]
+        return [col for col in self.data.columns if not _re.match(r"Barcode(_\d+){0,1}", col)]
 
     def counted_barcode_columns(self):
         """
         Returns all building block barcode column names
         """
         # Return any column that starts with Barcode and does or does not have a digit
-        return [col for col in self.data if re.match(r"Barcode(_\d+){0,1}", col)]
+        return [col for col in self.data if _re.match(r"Barcode(_\d+){0,1}", col)]
 
-    def number_synthons(self) -> List[int]:
+    def number_synthons(self) -> _typing.List[int]:
         """
         Returns the bumber of barcodes for each row of the data.  This is used for the comparison
         graph
@@ -196,7 +196,7 @@ class DelData:
         # First select only barcode data, then true false whether or not the barcode was used for
         # counts, the sum the rows
         barcode_data = self.data.loc[:, self.counted_barcode_columns()]
-        return notna(barcode_data).sum(axis=1).values
+        return _pd.notna(barcode_data).sum(axis=1).values
 
     def to_csv(self, out_file: str):
         """
@@ -231,7 +231,7 @@ class DelDataMerged(DelData):
         quantile_norm = self.data.loc[:, self.data_columns()].rank(
             method='min').stack().astype(int).map(rank_mean).unstack()
         # Create the dataframe with barcode columns and quantile normalized data
-        quantile_norm_df = concat(
+        quantile_norm_df = _pd.concat(
             [self.data.loc[:, self.counted_barcode_columns()], quantile_norm], ignore_index=True,
             sort=False, axis=1)
         # Add back the column names
@@ -254,7 +254,7 @@ class DelDataMerged(DelData):
         del_data_back_sub = del_data.sub(
             background_data, axis=0)
         # Create the dataframe with the barcode columns and the subtracted data
-        del_data_back_sub_df = concat([self.data.loc[:, self.counted_barcode_columns()],
+        del_data_back_sub_df = _pd.concat([self.data.loc[:, self.counted_barcode_columns()],
                                        del_data_back_sub], ignore_index=True, sort=False, axis=1)
         # Add back the column names
         del_data_back_sub_df.columns = self.counted_barcode_columns() + del_data_back_sub.columns.tolist()
@@ -296,7 +296,7 @@ class DelDataMerged(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         # Merge the two together
-        merged_data = merge(self.data, deldata.data,
+        merged_data = _pd.merge(self.data, deldata.data,
                             on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
         if inplace:
@@ -319,7 +319,7 @@ class DelDataMerged(DelData):
             raise Exception(
                 "Data types do not match.  Trying to concat {deldata.data_type} into {self.data_type}")
         # Add the new rows
-        concat_data = concat([self.data, deldata.data], ignore_index=True, sort=False)
+        concat_data = _pd.concat([self.data, deldata.data], ignore_index=True, sort=False)
         if inplace:
             self.data = concat_data
             return None
@@ -335,7 +335,7 @@ class DelDataMerged(DelData):
         sample_data.rename({sample_name: self.data_type}, axis=1, inplace=True)
         return DelDataSample(sample_data, self.data_type, sample_name)
 
-    def select_samples(self, sample_names: List[str], inplace=False):
+    def select_samples(self, sample_names: _typing.List[str], inplace=False):
         """
         Returns a subset of samples from a DelDataMerged object.  Especially used for the
         comparison_graph
@@ -357,16 +357,16 @@ class DelDataMerged(DelData):
         for their fragment DEL
         """
         counts = self.data.loc[:, self.data_columns()].values
-        sample_enrichment_df = DataFrame()
+        sample_enrichment_df = _pd.DataFrame()
         for col_index, sample_id in enumerate(self.data_columns()):
             # Get row sumns of all columns except the sample column
-            non_sample_counts = np.sum(np.delete(counts, col_index, 1), axis=1)
+            non_sample_counts = _np.sum(_np.delete(counts, col_index, 1), axis=1)
             # Get total non-sample counts
-            total_non_sample_counts = np.sum(non_sample_counts)
+            total_non_sample_counts = _np.sum(non_sample_counts)
             # Get the sample counts with the col_index
             sample_counts = counts[:, col_index]
             # Get the total sample counts
-            total_sample_counts = np.sum(sample_counts)
+            total_sample_counts = _np.sum(sample_counts)
             # compute the equation within the function description
             sample_data = (sample_counts / total_sample_counts) / \
                 (non_sample_counts / total_non_sample_counts)
@@ -480,7 +480,7 @@ class DelDataMerged(DelData):
         """
         reduced_data = self.select_samples([x_sample, y_sample]).reduce(min_score)
         max_value = max(reduced_data.data[x_sample].tolist() + reduced_data.data[y_sample].tolist())
-        fig = go.Figure()
+        fig = _go.Figure()
         # Get the number of synthons for each row of data
         number_synthons = reduced_data.number_synthons()
         # Create a unique list to iterate over for graphing sepearately
@@ -490,7 +490,7 @@ class DelDataMerged(DelData):
         colors = [None, "orange", "green", "blue", "black", "yellow", "red"]
         for num_synthons in unique_number_synthons:
             # create a dataframe only containing the rows with the number of synthons
-            reduced_data_synthon_num = reduced_data.data.iloc[np.where(
+            reduced_data_synthon_num = reduced_data.data.iloc[_np.where(
                 number_synthons == num_synthons)[0], :]
             # create the hover text
             barcode_texts = ["<br>".join([f"<b>{barcode_name}:<b> {barcode_value}"for barcode_name, barcode_value in
@@ -500,7 +500,7 @@ class DelDataMerged(DelData):
                          for x, y, barcode_text in
                          zip(reduced_data_synthon_num[x_sample], reduced_data_synthon_num[y_sample], barcode_texts)]
             # Add the synthon point plot
-            fig.add_trace(go.Scatter(
+            fig.add_trace(_go.Scatter(
                 name=f"{num_synthons} synthons",
                 x=reduced_data_synthon_num[x_sample].round(3),
                 y=reduced_data_synthon_num[y_sample].round(3),
@@ -521,8 +521,8 @@ class DelDataMerged(DelData):
             xaxis_title=f"{x_sample} {reduced_data.data_type}",
             yaxis_title=f"{y_sample} {reduced_data.data_type}")
         # Output hte graph
-        file_name = f"{date.today()}_{x_sample}_vs_{y_sample}.{self.data_descriptor()}.2d.html"
-        fig.write_html(os.path.join(out_dir, file_name))
+        file_name = f"{_date.today()}_{x_sample}_vs_{y_sample}.{self.data_descriptor()}.2d.html"
+        fig.write_html(_os.path.join(out_dir, file_name))
 
 
 class DelDataSample(DelData):
@@ -538,7 +538,7 @@ class DelDataSample(DelData):
             raise Exception(
                 f"Data types are not the same.  Trying to merge {self.data_type} into {deldata.data_type}")
         # Merge data and renmae the data column to the sample name for each
-        merged_data = merge(self.data.rename({self.data_type: self.sample_name}, axis=1),
+        merged_data = _pd.merge(self.data.rename({self.data_type: self.sample_name}, axis=1),
                             deldata.data.rename({deldata.data_type: deldata.sample_name}, axis=1),
                             on=["Barcode_1", "Barcode_2", "Barcode_3"],
                             how="outer").fillna(0)
@@ -676,7 +676,7 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(enrichment_df, "enrichment", self.sample_name)
 
-    def graph_2d(self, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None):
+    def graph_2d(self, out_dir="./", min_score=0, barcodes: _typing.Optional[_typing.List[str]] = None):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block.  Currently only works for 3 barcode data
@@ -700,7 +700,7 @@ class DelDataSample(DelData):
         else:
             raise Exception(f"Only {len(barcodes)} counted barcodes not supported at this time")
 
-    def _graph_2d_3_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_3_barcodes(self, reduced_data, out_dir: str, sizes: _pd.Series, barcodes: _typing.List[str]):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block when there are 3 barcodes. Creates two graphs to represent
@@ -715,9 +715,9 @@ class DelDataSample(DelData):
         bc = [f"{b},{c}" for b, c in zip(reduced_data.data[barcodes[1]],
                                          reduced_data.data[barcodes[2]])]
         # Create a two plot figure
-        fig = make_subplots(rows=1, cols=2)
+        fig = _make_subplots(rows=1, cols=2)
         # Create the barcode_1 + barcode_2 vs barcode_3 graph
-        fig.append_trace(go.Scatter(
+        fig.append_trace(_go.Scatter(
             x=ab,
             y=reduced_data.data[barcodes[2]],
             mode='markers',
@@ -741,7 +741,7 @@ class DelDataSample(DelData):
         fig["layout"]["yaxis"]["showticklabels"] = False
 
         # Create the barcode_1 vs barcode_2 + barcode_3 graph
-        fig.append_trace(go.Scatter(
+        fig.append_trace(_go.Scatter(
             x=bc,
             y=reduced_data.data[barcodes[0]],
             mode='markers',
@@ -763,15 +763,15 @@ class DelDataSample(DelData):
         fig["layout"]["xaxis2"]["showticklabels"] = False
         fig["layout"]["yaxis2"]["title"] = barcodes[0]
         fig["layout"]["yaxis2"]["showticklabels"] = False
-        file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+        file_name = f"{_date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
         # Create the interactive graph
-        fig.write_html(os.path.join(out_dir, file_name))
+        fig.write_html(_os.path.join(out_dir, file_name))
 
-    def _graph_2d_2_barcodes(self, reduced_data, out_dir: str, sizes: Series, barcodes: List[str]):
+    def _graph_2d_2_barcodes(self, reduced_data, out_dir: str, sizes: _pd.Series, barcodes: _typing.List[str]):
         """
         Creates a 2d graph from DelDataSample object with each axis being a single barcode/synthon. 
         """
-        fig = go.Figure(data=go.Scatter(
+        fig = _go.Figure(data=_go.Scatter(
             x=reduced_data.data[barcodes[0]],
             y=reduced_data.data[barcodes[1]],
             mode='markers',
@@ -795,10 +795,10 @@ class DelDataSample(DelData):
         # Remove the tickmarks
         fig["layout"]["xaxis"]["showticklabels"] = False
         fig["layout"]["yaxis"]["showticklabels"] = False
-        file_name = f"{date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
-        fig.write_html(os.path.join(out_dir, file_name))
+        file_name = f"{_date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
+        fig.write_html(_os.path.join(out_dir, file_name))
 
-    def graph_3d(self, out_dir="./", min_score=0, barcodes: Optional[List[str]] = None) -> None:
+    def graph_3d(self, out_dir="./", min_score=0, barcodes: _typing.Optional[_typing.List[str]] = None) -> None:
         """
         Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
         only works for 3 barcode data
@@ -818,7 +818,7 @@ class DelDataSample(DelData):
         sizes = reduced_data.data[reduced_data.data_column()].apply(
             lambda score: max_point_size * (score - min_score + 1) / (max_score - min_score))
         # Create the 3d graph
-        fig = go.Figure(data=[go.Scatter3d(
+        fig = _go.Figure(data=[_go.Scatter3d(
             x=reduced_data.data[barcodes[0]],
             y=reduced_data.data[barcodes[1]],
             z=reduced_data.data[barcodes[2]],
@@ -844,15 +844,15 @@ class DelDataSample(DelData):
                 zaxis=dict(showticklabels=False, title_text=barcodes[2]),
             )
         )
-        file_name = f"{date.today()}_{self.sample_name}.{self.data_descriptor()}.3d.html"
-        fig.write_html(os.path.join(out_dir, file_name))
+        file_name = f"{_date.today()}_{self.sample_name}.{self.data_descriptor()}.3d.html"
+        fig.write_html(_os.path.join(out_dir, file_name))
 
 
 def read_merged(file_path: str):
     """
     Reads in merged output data from NGS-Barcode-Count and creates a DelDataMerged object
     """
-    data = read_csv(file_path)
+    data = _pd.read_csv(file_path)
     if "Count" in data.columns:
         raise Exception("Data type is sample. Use delanalysis.read_sample()")
     return DelDataMerged(data)
@@ -862,7 +862,7 @@ def read_sample(file_path: str, sample_name: str):
     """
     Reads in sample output data from NGS-Barcode-Count and creates a DelDataMerged object
     """
-    data = read_csv(file_path)
+    data = _pd.read_csv(file_path)
     if "Count" not in data.columns:
         raise Exception(
             "Data type is not sample. Maybe use delanalysis.read_merge() if it is the merged output data")
