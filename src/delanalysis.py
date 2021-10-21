@@ -179,14 +179,14 @@ class DelData:
         Returns all column names that contain data that is not the barcodes
         """
         # Return any column that does not start with Barcode
-        return [col for col in self.data.columns if not re.search("^Barcode(_\d+){0,1}$", col)]
+        return [col for col in self.data.columns if not re.match(r"Barcode(_\d+){0,1}", col)]
 
     def counted_barcode_columns(self):
         """
         Returns all building block barcode column names
         """
         # Return any column that starts with Barcode and does or does not have a digit
-        return [col for col in self.data if re.search("^Barcode(_\d+){0,1}$", col)]
+        return [col for col in self.data if re.match(r"Barcode(_\d+){0,1}", col)]
 
     def number_synthons(self) -> List[int]:
         """
@@ -312,8 +312,7 @@ class DelDataMerged(DelData):
         etc.
         """
         # If the column names don't make, raise an exception
-        if any([col not in deldata.data.columns for col in self.data.columns])\
-                or any([col not in self.data.columns for col in deldata.data.columns]):
+        if set(deldata.data.columns) != set(self.data.columns):
             raise Exception("Data column mismatch")
         # If the data types are not the same, e.g. zscored, raise an exception
         if self.data_type != deldata.data_type:

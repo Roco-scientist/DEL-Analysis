@@ -13,18 +13,26 @@ DNA encoded library analysis.  This is companion software to <a href=https://git
 
 Anaconda python required for the instructions below
 
-### Download and move into directory
-
-```
-git clone https://github.com/Roco-scientist/DEL-Analysis.git
-cd DEL-Analysis
-```
-
-### Create a del environment and install
+### Create a del environment and activate
 
 ```
 conda create -n del python=3.9
 conda activate del
+```
+
+### Install
+
+From pypl:<br>
+
+```
+pip install delanalysis
+```
+
+From source:<br>
+
+```
+git clone https://github.com/Roco-scientist/DEL-Analysis.git
+cd DEL-Analysis
 pip install --use-feature=in-tree-build .
 ```
 
