@@ -473,7 +473,7 @@ class DelDataMerged(DelData):
         else:
             return DelDataMerged(enrichment_df, data_type="enrichment")
 
-    def comparison_graph(self, x_sample: str, y_sample: str, out_dir, min_score=0):
+    def comparison_graph(self, x_sample: str, y_sample: str, out_dir: str = "./", min_score: float = 0):
         """
         Compares two samples on a single graph where x_sample is on the x axis with the enrichment
         or count and y_sample is on the y_axis
@@ -676,7 +676,7 @@ class DelDataSample(DelData):
         else:
             return DelDataSample(enrichment_df, "enrichment", self.sample_name)
 
-    def graph_2d(self, out_dir="./", min_score=0, barcodes: _typing.Optional[_typing.List[str]] = None):
+    def graph_2d(self, out_dir: str = "./", min_score: float = 0, barcodes: _typing.Optional[_typing.List[str]] = None):
         """
         Creates a 2d graph from DelDataSample object with x-axis being the combo building block and
         y-axis the single building block.  Currently only works for 3 barcode data
@@ -798,7 +798,7 @@ class DelDataSample(DelData):
         file_name = f"{_date.today()}_{reduced_data.sample_name}.{reduced_data.data_descriptor()}.2d.html"
         fig.write_html(_os.path.join(out_dir, file_name))
 
-    def graph_3d(self, out_dir="./", min_score=0, barcodes: _typing.Optional[_typing.List[str]] = None) -> None:
+    def graph_3d(self, out_dir: str = "./", min_score: float = 0, barcodes: _typing.Optional[_typing.List[str]] = None) -> None:
         """
         Creates a 3d graph from DelDataSample object with each axis being a building block.  Currently
         only works for 3 barcode data

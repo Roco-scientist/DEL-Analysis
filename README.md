@@ -59,19 +59,19 @@ import delanalysis
 merged_data = delanalysis.read_merged("test_counts.all.csv")
 
 # zscore, then quantile_normalize, then subtract background which is 'test_1'
-merged_data_transformed = merged_data.binomial_zscore().subtract_background("test_1")
+merged_data_transformed = merged_data.binomial_zscore().subtract_background(background_name="test_1")
 
 # Create a 2d comparison graph between 'test_2' and 'test_3' in the current directory and with a low end cutoff of 4
-merged_data_transformed.comparison_graph("test_2", "test_3", "./", 4)
+merged_data_transformed.comparison_graph(x_sample="test_2", y_sample="test_3", out_dir="./", min_score=4)
 
 # Creates a DelDataSample object from a single sample from the merged object
-test_2_data_transformed = merged_data_transformed.sample_data("test_2")
+test_2_data_transformed = merged_data_transformed.sample_data(sample_name="test_2")
 
 # Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
-test_2_data_transformed.graph_3d("./", 4)
+test_2_data_transformed.graph_3d(out_dir="./", min_score=4)
 
 # Create a 2d graph within the current directory and a low end cutoff of 4
-test_2_data_transformed.graph_2d("./", 4)
+test_2_data_transformed.graph_2d(out_dir="./", min_score=4)
 
 # Can all be done in one line
 delanalysis.read_merged("test_counts.all.csv").binomial_zscore().subtract_background("test_1").sample_data("test_2").graph_3d("./", 4)
@@ -85,7 +85,7 @@ full_double = full.concat(double)
 full_double_single = full_double.concat(single)
 full_double_single_zscore = full_double_single.binomial_zscore_sample_normalized()
 full_double_single_zscore.subtract_background("test_1", inplace=True)
-full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002
+full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/", 0.002)
 ```
 
 ### Working with sample data output
@@ -102,10 +102,10 @@ sample_data = delanalysis.read_sample("test_1.csv")
 sample_data_zscore = sample_data.binomial_zscore()
 
 # Create a 3d graph with each axis being a barcode within the current directory and a low end cutoff of 4
-sample_data_zscore.graph_3d("./", 4)
+sample_data_zscore.graph_3d(out_dir="./", min_score=4)
 
 # Create a 2d graph within the current directory and a low end cutoff of 4
-sample_data_zscore.graph_2d("./", 4)
+sample_data_zscore.graph_2d(out_dir="./", min_score=4)
 ```
 
 ### Resulting graphs
