@@ -1,13 +1,11 @@
 # DEL-Analysis
-DNA encoded library analysis.  This is companion software to <a href=https://github.com/Roco-scientist/NGS-Barcode-Count>NGS-Barcode-Count</a> for outputing analysis and graphs.
+DNA encoded library analysis.  This is companion software to [NGS-Barcode-Count](https://github.com/Roco-scientist/NGS-Barcode-Count) for outputing analysis and graphs.
 
 ## Table of Contents
-<ul>
-<li><a href=#installation>Installation</a></li>
-<li><a href=#files-needed>Files Needed</a></li>
-<li><a href=#run>Run</a></li>
-<li><a href=#methods>Methods</a></li>
-</ul>
+- [Installation](#installation)
+- [Files Needed](#files-needed)
+- [Run](#run)
+- [Methods](#methods)
 
 ## Installation
 
@@ -22,13 +20,13 @@ conda activate del
 
 ### Install
 
-From pypl:<br>
+From pypl:  
 
 ```
 pip install delanalysis
 ```
 
-From source:<br>
+From source:  
 
 ```
 git clone https://github.com/Roco-scientist/DEL-Analysis.git
@@ -50,7 +48,8 @@ python
 
 ### Working with merged data output
 
-All code below is within python<br><br>
+All code below is within python  
+  
 
 ```
 import delanalysis
@@ -90,7 +89,8 @@ full_double_single_zscore.comparison_graph("test_2", "test_3", "../../test_del/"
 
 ### Working with sample data output
 
-All code below is within python<br><br>
+All code below is within python  
+  
 
 ```
 import delanalysis
@@ -110,134 +110,69 @@ sample_data_zscore.graph_2d(out_dir="./", min_score=4)
 
 ### Resulting graphs
 
-The actual graphs will be interactive HTML graphs with hover data etc. <br><br>
+The actual graphs will be interactive HTML graphs with hover data etc.  
+  
+From comparison_graph()  
 
-From comparison_graph()<br>
+![ "delanalysis.comparison_graph()" ](./comparison_graph.png)  
 
-![ "delanalysis.comparison_graph()" ](./comparison_graph.png)<br>
+From graph_2d()  
 
-From graph_2d()<br>
+![ "delanalysis.graph_2d()" ](./2d_graph.png)  
 
-![ "delanalysis.graph_2d()" ](./2d_graph.png)<br>
+From graph_3d()  
 
-From graph_3d()<br>
-
-![ "delanalysis.graph_3d()" ](./3d_graph.png)<br>
+![ "delanalysis.graph_3d()" ](./3d_graph.png)  
 
 ## Methods
 
 ### delanalysis methods to import data
 
-<table>
-<tr>
-<th>Method</th> <th>Description</th>
-</tr>
-<tr>
-<td>read_merged(file_path)</td> <td>Creates a DelDataMerged object which can use the methods below</td>
-</tr>
-<tr>
-<td>read_sample(file_path)</td> <td>Creates a DelDataSample object which can use the methods below</td>
-</tr>
-<tr>
-<td></td> <td></td>
-</tr>
-</table>
+|Method |Description|
+|-------|-----------|
+|read_merged(file_path) |Creates a DelDataMerged object which can use the methods below|
+|read_sample(file_path) |Creates a DelDataSample object which can use the methods below|
 
 ### Common to merged data and sample data
 
-Used with either delanalysis.read_merged() or delanalysis.read_sample() objects
+Used with either delanalysis.read_merged() or delanalysis.read_sample() objects  
 
-<table>
-<tr>
-<th>Method</th> <th>Description</th>
-</tr>
-<tr>
-<td>building_block_columns()</td> <td>returns all column names which contain building block info</td>
-</tr>
-<tr>
-<td>data_columns()</td> <td>returns all column names which contain data</td>
-</tr>
-<tr>
-<td>data_descriptor()</td> <td>Returns data_type with underscores for file output</td>
-</tr>
-<tr>
-<td>data_type</td> <td>The data type of the DelData</td>
-</tr>
-<tr>
-<td>to_csv(out_file)</td> <td>Writes the DelData object to the out_file in csv format</td>
-</tr>
-<tr>
-<td>zscore(inplace=False)</td> <td>z-scores the data</td>
-</tr>
-<tr>
-<td>binomial_zscore(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation</td>
-</tr>
-<tr>
-<td>binomial_zscore_sample_normalized(del_library_size, inplace=False)</td> <td>z-scores the data using the binomial distribution standard deviation and normalizes by sqrt(n). See: <a href=https://pubs.acs.org/doi/10.1021/acscombsci.8b00116>Quantitative Comparison of Enrichment...</a></td>
-</tr>
-<tr>
-<td>enrichment(del_library_size, inplace=False)</td> <td>count * library_size/ total_counts</td>
-</tr>
-<tr>
-<td>update_synthon_numbers(unique_synthons_per_barcode: List[int])</td> <td>The number of unique synthons is inferred by the total uniques found in the data.  These numbers can be updated with this function</td>
-</tr>
-</table>
+|Method |Description|
+|-------|-----------|
+|building_block_columns() |returns all column names which contain building block info|
+|data_columns() |returns all column names which contain data|
+|data_descriptor() |Returns data_type with underscores for file output|
+|data_type |The data type of the DelData|
+|to_csv(out_file) |Writes the DelData object to the out_file in csv format|
+|zscore(inplace=False) |z-scores the data|
+|binomial_zscore(del_library_size, inplace=False) |z-scores the data using the binomial distribution standard deviation|
+|binomial_zscore_sample_normalized(del_library_size, inplace=False) |z-scores the data using the binomial distribution standard deviation and normalizes by sqrt(n). See: [Quantitative Comparison of Enrichment...](https://pubs.acs.org/doi/10.1021/acscombsci.8b00116)|
+|enrichment(del_library_size, inplace=False) |count * library_size/ total_counts|
+|update_synthon_numbers(unique_synthons_per_barcode: List[int]) |The number of unique synthons is inferred by the total uniques found in the data.  These numbers can be updated with this function|
 
 ### Merged data
 
 Used with delanalysis.read_merged() which creates a DelDataMerged object
 
-<table>
-<tr>
-<th>Method</th> <th>Description</th>
-</tr>
-<tr>
-<td>quantile_normalize(inplace=False)</td> <td>quantile normalizes the data</td>
-</tr>
-<tr>
-<td>sample_enrichment(inplace=False)</td> <td>(sample_count/total_sample_count)/(non_sample_count/total_non_sample_count).  Still experimental as if the count only happens in one sample, a div 0 error occurs</td>
-</tr>
-<tr>
-<td>subtract_background(background_name, inplace=False)</td> <td>subtracts the background_name sample from all other samples</td>
-</tr>
-<tr>
-<td>reduce(min_score, inplace=False)</td> <td>Removes all rows from the data where no samples have a score above the min_score</td>
-</tr>
-<tr>
-<td>merge(deldata, inplace=False)</td> <td>Merges DelDataMerged data into the current DelDataMerged object</td>
-</tr>
-<tr>
-<td>sample_data(sample_name)</td> <td>Returns a DelDataSample object from the DelDataMerged object.  This is needed for the 2d and 3d graph</td>
-</tr>
-<tr>
-<td>select_samples(sample_names: List, inplace=False)</td> <td>Reduces the data to the listed sample names</td>
-</tr>
-<tr>
-<td>comparison_graph(x_sample, y_sample, out_dir, min_score=0)</td> <td>Outputs a comparison graph of x_sample vs y_sample names.</td>
-</tr>
-</table>
+|Method |Description|
+|-------|-----------|
+|quantile_normalize(inplace=False) |quantile normalizes the data|
+|sample_enrichment(inplace=False) |(sample_count/total_sample_count)/(non_sample_count/total_non_sample_count).  Still experimental as if the count only happens in one sample, a div 0 error occurs|
+|subtract_background(background_name, inplace=False) |subtracts the background_name sample from all other samples|
+|reduce(min_score, inplace=False) |Removes all rows from the data where no samples have a score above the min_score|
+|merge(deldata, inplace=False) |Merges DelDataMerged data into the current DelDataMerged object|
+|sample_data(sample_name) |Returns a DelDataSample object from the DelDataMerged object.  This is needed for the 2d and 3d graph|
+|select_samples(sample_names: List, inplace=False) |Reduces the data to the listed sample names|
+|comparison_graph(x_sample, y_sample, out_dir, min_score=0) |Outputs a comparison graph of x_sample vs y_sample names.|
 
 ### Sample data
 
-Used with delanalysis.read_sample() which creates a DelDataSample object
+Used with delanalysis.read_sample() which creates a DelDataSample object  
 
-<table>
-<tr>
-<th>Method</th> <th>Description</th>
-</tr>
-<tr>
-<td>reduce(min_score, inplace=False)</td> <td>reduces the data to only data greater than the min_score</td>
-</tr>
-<tr>
-<td>max_score()</td> <td>Returns the maximum score within the data</td>
-</tr>
-<tr>
-<td>data_column()</td> <td>Returns the data column name</td>
-</tr>
-<tr>
-<td>graph_2d(out_dir, min_score=0)</td> <td>Produces two subplot 2d graphs for the different barcodes of a DelDataSample.</td>
-</tr>
-<tr>
-<td>graph_3d(out_dir, min_score=0)</td> <td>Produces 3d graphs for the different barcodes of a DelDataSample.</td>
-</tr>
-</table>
+|Method |Description|
+|-------|-----------|
+|reduce(min_score, inplace=False) |reduces the data to only data greater than the min_score|
+|max_score() |Returns the maximum score within the data|
+|data_column() |Returns the data column name|
+|graph_2d(out_dir, min_score=0) |Produces two subplot 2d graphs for the different barcodes of a DelDataSample.|
+|graph_3d(out_dir, min_score=0) |Produces 3d graphs for the different barcodes of a DelDataSample.|
